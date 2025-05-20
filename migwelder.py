@@ -9,9 +9,9 @@ def main():
     """main"""
     logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
-    output_path = 'output/connections.csv'
+    output_path = 'output'
     discovery = Discovery()
-    discovery.export_network_connections(output_path)
+    discovery.export_ads_data('output/ads.csv')
     print(f"Export completed to {output_path}")
 
 
