@@ -11,7 +11,8 @@ def main():
 
     output_path = 'output'
     discovery = Discovery()
-    discovery.export_ads_data('output/ads.csv')
+    discovery.export_server_inventory('output/servers.csv')
+    # discovery.export_network_connections('output/network_connections.csv')
     print(f"Export completed to {output_path}")
 
 
