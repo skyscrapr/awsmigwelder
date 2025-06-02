@@ -71,36 +71,32 @@ class Discovery:
             destination_id = destination_ids[0]
             print(f"⚠️ DestinationId: {destination_id}")
 
-            # Filter ingress edges (where DestinationId matches our host)
-            ingress_edges = [
-                edge for edge in edges if edge.get("Target") == destination_id
-            ]
-
-            if not ingress_edges:
-                print("⚠️ No ingress connections found for the specified host")
+            if not edges:
+                print("⚠️ No connections found for the specified host")
                 exit(0)
 
             # Generate simplified ingress rule rows
-            ingress_rules = []
-            for edge in ingress_edges:
+            rules = []
+            for edge in edges:
                 source_node = nodes.get(edge.get("Source"))
                 for port in edge.get("Attributes", {}).get("ports", {}).get("IS", ""): 
                     rule = {
+                        "Type": "ingress" if edge.get("Target") == destination_id else "egress", 
                         "Port": port,
                         "Protocol": edge.get("Protocol", "tcp"),
                         "SourceIp": source_node.get("Attributes", {}).get("ipv4Addresses", {}).get("SS", ""),
                         "SourceHostName": source_node.get("Attributes", {}).get("hostname", {}).get("S", "")                        
                     }
-                    ingress_rules.append(rule)
+                    rules.append(rule)
 
             # Write to CSV
             with open(output_path, "w", newline="") as csvfile:
-                fieldnames = ["Port", "Protocol", "SourceIp", "SourceHostName"]
+                fieldnames = ["Type", "Port", "Protocol", "SourceIp", "SourceHostName"]
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
                 writer.writeheader()
-                writer.writerows(ingress_rules)
+                writer.writerows(rules)
 
-            print(f"✅ Ingress rules exported to {output_path}")
+            print(f"✅ Rules exported to {output_path}")
 
         else:
             print(f"❌ Request failed with status {response.status_code}")
