@@ -98,9 +98,13 @@ def is_covered(broader: dict, specific: dict) -> bool:
         b_net = ipaddress.ip_network(broader["CidrIp"])
         s_net = ipaddress.ip_network(specific["CidrIp"])
 
-        if isinstance(s_net, ipaddress.IPv4Network) and isinstance(b_net, ipaddress.IPv4Network):
+        if isinstance(s_net, ipaddress.IPv4Network) and isinstance(
+            b_net, ipaddress.IPv4Network
+        ):
             return s_net.subnet_of(b_net)
-        elif isinstance(s_net, ipaddress.IPv6Network) and isinstance(b_net, ipaddress.IPv6Network):
+        elif isinstance(s_net, ipaddress.IPv6Network) and isinstance(
+            b_net, ipaddress.IPv6Network
+        ):
             return s_net.subnet_of(b_net)
         else:
             return False
