@@ -102,69 +102,6 @@ class Discovery:
         else:
             print(f"❌ Request failed with status {response.status_code}")
             print(response.text)
-
-
-    def export_network_connections(self, output_path):
-        # --- Configuration ---
-        region = "us-east-1"
-        service = "discovery"
-        endpoint = "https://api.us-east-1.prod.adm.migrationhub.aws.a2z.com/"
-        target = "AWSADMAPIService.GetNetworkConnectionGraph"
-        payload = {
-            "Resources": {
-                "GetByServerIds": {
-                    "ServerIds": ["d-server-038oarq94eqr96"]
-                }
-            }
-        }
-        headers = {
-            "Content-Type": "application/x-amz-json-1.0",
-            "X-Amz-Target": target,
-        }
-
-        # --- AWS SigV4 Signing ---
-        session = botocore.session.get_session()
-        credentials = session.get_credentials()
-        request = botocore.awsrequest.AWSRequest(
-            method="POST",
-            url=endpoint,
-            data=json.dumps(payload),
-            headers=headers,
-        )
-        sigv4 = botocore.auth.SigV4Auth(credentials, service, region)
-        sigv4.add_auth(request)
-
-        # --- Send the request ---
-        prepared_request = request.prepare()
-        response = requests.post(
-            prepared_request.url,
-            headers=dict(prepared_request.headers),
-            data=prepared_request.body,
-        )
-
-        # --- Output to file ---
-        if response.ok:
-            data = response.json()
-            with open(output_path, "w") as f:
-                json.dump(data, f, indent=2)
-            print(f"✅ Network graph data saved to {output_path}")
-
-                # Extract edges from response
-            # Assumes format like: {"Graph": {"Edges": [{"SourceId": "x", "DestinationId": "y", ...}]}}
-            edges = data.get("Graph", {}).get("Edges", [])
-
-            if edges:
-                with open(output_csv_file, "w", newline="") as csvfile:
-                    fieldnames = edges[0].keys()
-                    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-                    writer.writeheader()
-                    writer.writerows(edges)
-                print(f"✅ CSV data saved to {output_csv_file}")
-            else:
-                print("⚠️ No edges found in network graph")
-        else:
-            print(f"❌ Request failed with status {response.status_code}")
-            print(response.text)
                                    
 
     def export_server_inventory(self, output_path):
