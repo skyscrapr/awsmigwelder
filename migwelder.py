@@ -12,27 +12,27 @@ from collections import defaultdict
 from typing import List, Dict, Tuple, Set
 
 
-def parse_rule(row: Dict[str, str]) -> Tuple:
-    """Normalize rule fields to a hashable tuple key."""
-    def safe_int(value):
-        try:
-            return int(value)
-        except (ValueError, TypeError):
-            return None
+# def parse_rule(row: Dict[str, str]) -> Tuple:
+#     """Normalize rule fields to a hashable tuple key."""
+#     def safe_int(value):
+#         try:
+#             return int(value)
+#         except (ValueError, TypeError):
+#             return None
         
-    fromPort = row["FromPort"] or ""
-    fromPort = safe_int(fromPort)
+#     fromPort = row["FromPort"] or ""
+#     fromPort = safe_int(fromPort)
 
-    toPort = row["ToPort"] or ""
-    toPort = safe_int(toPort)
+#     toPort = row["ToPort"] or ""
+#     toPort = safe_int(toPort)
 
-    return (
-        row["Type"].strip().lower(),
-        row["IpProtocol"].strip().lower(),
-        fromPort,
-        toPort,
-        row["CidrIp"].strip().lower(),
-    )
+#     return (
+#         row["Type"].strip().lower(),
+#         row["IpProtocol"].strip().lower(),
+#         fromPort,
+#         toPort,
+#         row["CidrIp"].strip().lower(),
+#     )
 
 
 def read_rules_from_csv(file_path: str) -> List[Dict[str, str]]:
@@ -114,45 +114,56 @@ def main():
     # Subcommand: export-sg-rules
     sg_parser = subparsers.add_parser("export-sg-rules", help="Export security group rules")
     sg_parser.add_argument(
-        "--id", required=True,
+        "i", "--id", required=True,
         help="The security group ID to export rules from."
+    )
+    sg_parser.add_argument(
+        "o", "--output", required=True,
+        help="The path and filename to write the output to."
     )
 
     # Subcommand: export-server-sg-rules
     server_sg_parser = subparsers.add_parser("export-server-sg-rules", help="Export server security group rules")
     server_sg_parser.add_argument(
-        "--id", required=True,
+        "i", "--id", required=True,
         help="The server ID from AWS migration hub to export the security group rules for."
+    )
+    sg_parser.add_argument(
+        "o", "--output", required=True,
+        help="The path and filename to write the output to."
     )
 
      # Subcommand: consolidate-sg-rules
     consolidate_parser = subparsers.add_parser("consolidate-sg-rules", help="Export server security group rules")
     consolidate_parser.add_argument(
-        "--input", required=True,
+        "i", "--input", required=True,
         help="The server rules to consolidate."
     )
     consolidate_parser.add_argument(
-        "--default", required=False,
+        "-d", "--default", required=False,
         help="The default rules to add to the set."
+    )
+    sg_parser.add_argument(
+        "o", "--output", required=True,
+        help="The path and filename to write the output to."
     )
     
     args = parser.parse_args()
 
-    if args.command == "export-server-sg-rules":
-        discovery = Discovery()
-        discovery.export_security_group_rules(args.id, args.id + ".csv")
-
-    elif args.command == "export-sg-rules":
+    if args.command == "export-sg-rules":
         ec2 = EC2()
-        ec2.export_security_group_rules(args.id, args.id + ".csv")
+        ec2.export_security_group_rules(args.id, args.output)
+
+    elif args.command == "export-server-sg-rules":
+        discovery = Discovery()
+        discovery.export_server_security_group_rules(args.id, args.output)
 
     elif args.command == "consolidate-sg-rules":
         input_rules = read_rules_from_csv(args.input)
-        # TODO: Check for default 
-        default_rules = read_rules_from_csv(args.default)
+        default_rules = read_rules_from_csv(args.default) if args.default else []
         new_rules = default_rules + input_rules
         consolidated = consolidate_rules(new_rules)
-        write_rules_to_csv(args.input + "_consolidate.csv", consolidated)
+        write_rules_to_csv(args.output, consolidated)
 
 
 if __name__ == "__main__":

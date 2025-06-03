@@ -15,7 +15,7 @@ LOGGER = logging.getLogger(__name__)
 class Discovery:
     """ Discovery """
 
-    def export_security_group_rules(self, server_id, output_path):
+    def export_server_security_group_rules(self, server_id, output_path):
         # --- Configuration ---
         region = "us-east-1"
         service = "discovery"

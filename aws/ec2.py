@@ -12,9 +12,6 @@ class EC2:
     def export_security_group_rules(self, security_group_id: str, output_path: str):
         """
         Exports security group rules for a given security_group_id to a CSV file.
-
-        Args:
-            output_file (str): Path to output CSV file.
         """
         logging.info(f"Looking up Security Groups by ID: {security_group_id}")
         client = boto3.client('ec2')
