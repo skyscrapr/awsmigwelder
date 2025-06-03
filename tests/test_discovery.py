@@ -1,7 +1,4 @@
-import json
 import csv
-import os
-from pathlib import Path
 from unittest.mock import patch, MagicMock
 from aws.discovery import Discovery
 

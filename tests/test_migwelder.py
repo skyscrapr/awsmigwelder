@@ -1,4 +1,3 @@
-import pytest
 from migwelder import (
     is_covered,
     consolidate_rules,

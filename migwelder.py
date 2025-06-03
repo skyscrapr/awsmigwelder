@@ -8,8 +8,7 @@ import sys
 import csv
 from aws.discovery import Discovery
 from aws.ec2 import EC2
-from collections import defaultdict
-from typing import List, Dict, Tuple, Set
+from typing import List, Dict
 
 
 # def parse_rule(row: Dict[str, str]) -> Tuple:
