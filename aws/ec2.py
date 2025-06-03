@@ -2,12 +2,6 @@
 import logging
 import boto3
 import csv
-import requests
-import botocore.auth
-import botocore.awsrequest
-import botocore.session
-import json
-
 
 LOGGER = logging.getLogger(__name__)
 

@@ -82,16 +82,17 @@ class Discovery:
                 for port in edge.get("Attributes", {}).get("ports", {}).get("IS", ""): 
                     rule = {
                         "Type": "ingress" if edge.get("Target") == destination_id else "egress", 
-                        "Port": port,
-                        "Protocol": edge.get("Protocol", "tcp"),
-                        "SourceIp": source_node.get("Attributes", {}).get("ipv4Addresses", {}).get("SS", ""),
-                        "SourceHostName": source_node.get("Attributes", {}).get("hostname", {}).get("S", "")                        
+                        "IpProtocol": edge.get("Protocol", "tcp"),
+                        "FromPort": port,
+                        "ToPort": port,
+                        "CidrIp": f"{source_node.get('Attributes', {}).get('ipv4Addresses', {}).get('SS', [''])[0]}/32",
+                        "Description": source_node.get("Attributes", {}).get("hostname", {}).get("S", "")               
                     }
                     rules.append(rule)
 
             # Write to CSV
             with open(output_path, "w", newline="") as csvfile:
-                fieldnames = ["Type", "Port", "Protocol", "SourceIp", "SourceHostName"]
+                fieldnames = ["Type", "IpProtocol", "FromPort", "ToPort", "CidrIp", "Description"]
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
                 writer.writeheader()
                 writer.writerows(rules)
