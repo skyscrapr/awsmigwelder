@@ -9,7 +9,6 @@ import csv
 from aws.discovery import Discovery
 from aws.ec2 import EC2
 from typing import List, Dict
-from typing import cast
 
 
 # def parse_rule(row: Dict[str, str]) -> Tuple:
