@@ -1,5 +1,12 @@
 # AWS Mig Welder
 
+[![CI](https://github.com/skyscrapr/awsmigwelder/actions/workflows/test.yml/badge.svg)](https://github.com/skyscrapr/awsmigwelder/actions/workflows/test.yml)
+![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)
+![License](https://img.shields.io/github/license/skyscrapr/awsmigwelder)
+![Black](https://img.shields.io/badge/code%20style-black-000000.svg)
+![Ruff](https://img.shields.io/badge/linter-ruff-orange)
+![Mypy](https://img.shields.io/badge/type%20checking-mypy-blueviolet)
+
 A command-line tool to **export** and **consolidate** AWS security group rules to support migrations, especially those involving AWS Migration Hub and EC2 environments.
 
 ## 🚀 Features
