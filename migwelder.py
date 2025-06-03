@@ -19,7 +19,7 @@ from typing import List, Dict, Tuple, Set
 #             return int(value)
 #         except (ValueError, TypeError):
 #             return None
-        
+
 #     fromPort = row["FromPort"] or ""
 #     fromPort = safe_int(fromPort)
 
@@ -45,7 +45,7 @@ def read_rules_from_csv(file_path: str) -> List[Dict[str, str]]:
 def consolidate_rules(rules: List[Dict[str, str]]) -> List[Dict[str, str]]:
     """Remove duplicate rules based on key fields."""
     consolidated = []
-    
+
     for i, i_rule in enumerate(rules):
         covered = False
         for j, j_rule in enumerate(rules):
@@ -76,7 +76,10 @@ def is_covered(broader: dict, specific: dict) -> bool:
         return False
 
     # Protocol match: '-1' covers all, otherwise must match exactly
-    if broader["IpProtocol"] != "-1" and broader["IpProtocol"] != specific["IpProtocol"]:
+    if (
+        broader["IpProtocol"] != "-1"
+        and broader["IpProtocol"] != specific["IpProtocol"]
+    ):
         return False
 
     # Port range check (only for non '-1' protocols)
@@ -105,49 +108,60 @@ def main():
     logging.basicConfig(
         stream=sys.stdout,
         level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s"
+        format="%(asctime)s [%(levelname)s] %(message)s",
     )
 
     parser = argparse.ArgumentParser(description="Migration Utilities")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # Subcommand: export-sg-rules
-    sg_parser = subparsers.add_parser("export-sg-rules", help="Export security group rules")
-    sg_parser.add_argument(
-        "i", "--id", required=True,
-        help="The security group ID to export rules from."
+    sg_parser = subparsers.add_parser(
+        "export-sg-rules", help="Export security group rules"
     )
     sg_parser.add_argument(
-        "o", "--output", required=True,
-        help="The path and filename to write the output to."
+        "i", "--id", required=True, help="The security group ID to export rules from."
+    )
+    sg_parser.add_argument(
+        "o",
+        "--output",
+        required=True,
+        help="The path and filename to write the output to.",
     )
 
     # Subcommand: export-server-sg-rules
-    server_sg_parser = subparsers.add_parser("export-server-sg-rules", help="Export server security group rules")
+    server_sg_parser = subparsers.add_parser(
+        "export-server-sg-rules", help="Export server security group rules"
+    )
     server_sg_parser.add_argument(
-        "i", "--id", required=True,
-        help="The server ID from AWS migration hub to export the security group rules for."
+        "i",
+        "--id",
+        required=True,
+        help="The server ID from AWS migration hub to export the security group rules for.",
     )
     sg_parser.add_argument(
-        "o", "--output", required=True,
-        help="The path and filename to write the output to."
+        "o",
+        "--output",
+        required=True,
+        help="The path and filename to write the output to.",
     )
 
-     # Subcommand: consolidate-sg-rules
-    consolidate_parser = subparsers.add_parser("consolidate-sg-rules", help="Export server security group rules")
-    consolidate_parser.add_argument(
-        "i", "--input", required=True,
-        help="The server rules to consolidate."
+    # Subcommand: consolidate-sg-rules
+    consolidate_parser = subparsers.add_parser(
+        "consolidate-sg-rules", help="Export server security group rules"
     )
     consolidate_parser.add_argument(
-        "-d", "--default", required=False,
-        help="The default rules to add to the set."
+        "i", "--input", required=True, help="The server rules to consolidate."
+    )
+    consolidate_parser.add_argument(
+        "-d", "--default", required=False, help="The default rules to add to the set."
     )
     sg_parser.add_argument(
-        "o", "--output", required=True,
-        help="The path and filename to write the output to."
+        "o",
+        "--output",
+        required=True,
+        help="The path and filename to write the output to.",
     )
-    
+
     args = parser.parse_args()
 
     if args.command == "export-sg-rules":

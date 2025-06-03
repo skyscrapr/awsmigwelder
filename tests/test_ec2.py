@@ -17,7 +17,7 @@ def test_export_security_group_rules(mock_boto_client, tmp_path):
                         "ToPort": 22,
                         "IpRanges": [
                             {"CidrIp": "203.0.113.0/24", "Description": "SSH access"}
-                        ]
+                        ],
                     }
                 ],
                 "IpPermissionsEgress": [
@@ -27,9 +27,9 @@ def test_export_security_group_rules(mock_boto_client, tmp_path):
                         "ToPort": None,
                         "IpRanges": [
                             {"CidrIp": "0.0.0.0/0", "Description": "Allow all"}
-                        ]
+                        ],
                     }
-                ]
+                ],
             }
         ]
     }

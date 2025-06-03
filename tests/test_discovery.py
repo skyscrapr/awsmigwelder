@@ -14,27 +14,25 @@ def fake_mh_response(server_id):
                 "Attributes": {
                     "serverId": {"S": server_id.lower()},
                     "ipv4Addresses": {"SS": ["10.0.0.5"]},
-                    "hostname": {"S": "example-host.local"}
-                }
+                    "hostname": {"S": "example-host.local"},
+                },
             },
             {
                 "Id": "node-456",
                 "Attributes": {
                     "ipv4Addresses": {"SS": ["10.0.0.10"]},
-                    "hostname": {"S": "external-host.local"}
-                }
-            }
+                    "hostname": {"S": "external-host.local"},
+                },
+            },
         ],
         "Edges": [
             {
                 "Source": "node-456",
                 "Target": "node-123",
                 "Protocol": "tcp",
-                "Attributes": {
-                    "ports": {"IS": [443]}
-                }
+                "Attributes": {"ports": {"IS": [443]}},
             }
-        ]
+        ],
     }
 
 
