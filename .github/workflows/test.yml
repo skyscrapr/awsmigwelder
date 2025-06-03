@@ -31,7 +31,7 @@ jobs:
 
       - name: Lint with ruff
         run: |
-          ruff aws/ tests/ migwelder.py
+          ruff check aws/ tests/ migwelder.py
 
       - name: Check formatting with black
         run: |

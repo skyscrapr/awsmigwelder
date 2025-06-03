@@ -9,6 +9,7 @@ import csv
 from aws.discovery import Discovery
 from aws.ec2 import EC2
 from typing import List, Dict
+from typing import cast
 
 
 # def parse_rule(row: Dict[str, str]) -> Tuple:
@@ -97,7 +98,13 @@ def is_covered(broader: dict, specific: dict) -> bool:
     try:
         b_net = ipaddress.ip_network(broader["CidrIp"])
         s_net = ipaddress.ip_network(specific["CidrIp"])
-        return s_net.subnet_of(b_net)
+
+        if isinstance(s_net, ipaddress.IPv4Network) and isinstance(b_net, ipaddress.IPv4Network):
+            return s_net.subnet_of(b_net)
+        elif isinstance(s_net, ipaddress.IPv6Network) and isinstance(b_net, ipaddress.IPv6Network):
+            return s_net.subnet_of(b_net)
+        else:
+            return False
     except ValueError:
         return False
 
