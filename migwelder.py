@@ -118,10 +118,10 @@ def main():
         "export-sg-rules", help="Export security group rules"
     )
     sg_parser.add_argument(
-        "i", "--id", required=True, help="The security group ID to export rules from."
+        "-i", "--id", required=True, help="The security group ID to export rules from."
     )
     sg_parser.add_argument(
-        "o",
+        "-o",
         "--output",
         required=True,
         help="The path and filename to write the output to.",
@@ -132,13 +132,13 @@ def main():
         "export-server-sg-rules", help="Export server security group rules"
     )
     server_sg_parser.add_argument(
-        "i",
+        "-i",
         "--id",
         required=True,
         help="The server ID from AWS migration hub to export the security group rules for.",
     )
-    sg_parser.add_argument(
-        "o",
+    server_sg_parser.add_argument(
+        "-o",
         "--output",
         required=True,
         help="The path and filename to write the output to.",
@@ -149,13 +149,13 @@ def main():
         "consolidate-sg-rules", help="Export server security group rules"
     )
     consolidate_parser.add_argument(
-        "i", "--input", required=True, help="The server rules to consolidate."
+        "-i", "--input", required=True, help="The server rules to consolidate."
     )
     consolidate_parser.add_argument(
         "-d", "--default", required=False, help="The default rules to add to the set."
     )
-    sg_parser.add_argument(
-        "o",
+    consolidate_parser.add_argument(
+        "-o",
         "--output",
         required=True,
         help="The path and filename to write the output to.",
