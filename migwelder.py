@@ -52,7 +52,7 @@ def deduplicate_rules(rules: List[Dict[str, str]]) -> List[Dict[str, str]]:
             str(rule.get("FromPort", "")).strip(),
             str(rule.get("ToPort", "")).strip(),
             rule["CidrIp"].strip(),
-            rule.get("Description", "").strip().lower()
+            rule.get("Description", "").strip().lower(),
         )
         if key not in seen:
             seen.add(key)
@@ -137,6 +137,7 @@ def is_covered(broader: dict, specific: dict) -> bool:
 
 def load_known_networks(path: str) -> List[Tuple[ipaddress._BaseNetwork, str]]:
     import csv
+
     known_networks = []
     with open(path) as f:
         reader = csv.DictReader(f)
@@ -150,7 +151,9 @@ def load_known_networks(path: str) -> List[Tuple[ipaddress._BaseNetwork, str]]:
     return known_networks
 
 
-def remap_cidr(rule: dict, known_networks: List[Tuple[ipaddress._BaseNetwork, str]]) -> dict:
+def remap_cidr(
+    rule: dict, known_networks: List[Tuple[ipaddress._BaseNetwork, str]]
+) -> dict:
     try:
         cidr = ipaddress.ip_network(rule["CidrIp"])
         for network, description in known_networks:
@@ -217,7 +220,10 @@ def main():
         "-d", "--default", required=False, help="The default rules to add to the set."
     )
     consolidate_parser.add_argument(
-        "-k", "--known-networks", required=False, help="Known networks to replace narrower ranges with."
+        "-k",
+        "--known-networks",
+        required=False,
+        help="Known networks to replace narrower ranges with.",
     )
     consolidate_parser.add_argument(
         "-o",
