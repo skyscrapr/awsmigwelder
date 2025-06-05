@@ -8,7 +8,7 @@ import sys
 import csv
 from aws.discovery import Discovery
 from aws.ec2 import EC2
-from typing import List, Dict
+from typing import List, Dict, Tuple
 
 
 # def parse_rule(row: Dict[str, str]) -> Tuple:
@@ -41,8 +41,27 @@ def read_rules_from_csv(file_path: str) -> List[Dict[str, str]]:
         return list(reader)
 
 
+def deduplicate_rules(rules: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    seen = set()
+    unique_rules = []
+    for rule in rules:
+        # Convert to a hashable tuple of relevant fields
+        key = (
+            rule["Type"].lower(),
+            rule["IpProtocol"].lower(),
+            str(rule.get("FromPort", "")).strip(),
+            str(rule.get("ToPort", "")).strip(),
+            rule["CidrIp"].strip(),
+            rule.get("Description", "").strip().lower()
+        )
+        if key not in seen:
+            seen.add(key)
+            unique_rules.append(rule)
+    return unique_rules
+
+
 def consolidate_rules(rules: List[Dict[str, str]]) -> List[Dict[str, str]]:
-    """Remove duplicate rules based on key fields."""
+    """Consolidate Rules."""
     consolidated = []
 
     for i, i_rule in enumerate(rules):
@@ -105,11 +124,55 @@ def is_covered(broader: dict, specific: dict) -> bool:
         elif isinstance(s_net, ipaddress.IPv6Network) and isinstance(
             b_net, ipaddress.IPv6Network
         ):
-            return s_net.subnet_of(b_net)
+            btemp = s_net.subnet_of(b_net)
+            if btemp:
+                return True
+            else:
+                return False
         else:
             return False
     except ValueError:
         return False
+
+
+def load_known_networks(path: str) -> List[Tuple[ipaddress._BaseNetwork, str]]:
+    import csv
+    known_networks = []
+    with open(path) as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            try:
+                net = ipaddress.ip_network(row["CidrIp"].strip())
+                desc = row.get("Description", "").strip()
+                known_networks.append((net, desc))
+            except ValueError:
+                continue
+    return known_networks
+
+
+def remap_cidr(rule: dict, known_networks: List[ipaddress._BaseNetwork]) -> dict:
+    try:
+        cidr = ipaddress.ip_network(rule["CidrIp"])
+        for network in known_networks:
+            if isinstance(cidr, type(network)) and cidr.subnet_of(network):
+                rule["CidrIp"] = str(network)
+                break
+    except ValueError:
+        pass  # Leave as-is if invalid
+    return rule
+
+def remap_cidr(rule: dict, known_networks: List[Tuple[ipaddress._BaseNetwork, str]]) -> dict:
+    try:
+        cidr = ipaddress.ip_network(rule["CidrIp"])
+        for network, description in known_networks:
+            if isinstance(cidr, type(network)) and cidr.subnet_of(network):
+                rule["CidrIp"] = str(network)
+                if description:
+                    rule["Description"] = description
+                break
+    except ValueError:
+        pass
+    return rule
 
 
 def main():
@@ -156,13 +219,16 @@ def main():
 
     # Subcommand: consolidate-sg-rules
     consolidate_parser = subparsers.add_parser(
-        "consolidate-sg-rules", help="Export server security group rules"
+        "consolidate-sg-rules", help="Export server security group rules."
     )
     consolidate_parser.add_argument(
         "-i", "--input", required=True, help="The server rules to consolidate."
     )
     consolidate_parser.add_argument(
         "-d", "--default", required=False, help="The default rules to add to the set."
+    )
+    consolidate_parser.add_argument(
+        "-k", "--known-networks", required=False, help="Known networks to replace narrower ranges with."
     )
     consolidate_parser.add_argument(
         "-o",
@@ -185,8 +251,13 @@ def main():
         input_rules = read_rules_from_csv(args.input)
         default_rules = read_rules_from_csv(args.default) if args.default else []
         new_rules = default_rules + input_rules
-        consolidated = consolidate_rules(new_rules)
-        write_rules_to_csv(args.output, consolidated)
+        new_rules = deduplicate_rules(new_rules)
+        if args.known_networks:
+            known_networks = load_known_networks(args.known_networks)
+            new_rules = [remap_cidr(r, known_networks) for r in new_rules]
+            new_rules = deduplicate_rules(new_rules)
+        new_rules = consolidate_rules(new_rules)
+        write_rules_to_csv(args.output, new_rules)
 
 
 if __name__ == "__main__":
