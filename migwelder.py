@@ -8,7 +8,7 @@ import sys
 import csv
 from aws.discovery import Discovery
 from aws.ec2 import EC2
-from typing import List, Dict, Tuple
+from typing import Any, List, Dict, Tuple
 
 
 # def parse_rule(row: Dict[str, str]) -> Tuple:
@@ -135,7 +135,7 @@ def is_covered(broader: dict, specific: dict) -> bool:
         return False
 
 
-def load_known_networks(path: str) -> List[Tuple[ipaddress._BaseNetwork, str]]:
+def load_known_networks(path: str) -> List[Tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, str]]:
     import csv
 
     known_networks = []
@@ -157,7 +157,7 @@ def remap_cidr(
     try:
         cidr = ipaddress.ip_network(rule["CidrIp"])
         for network, description in known_networks:
-            if isinstance(cidr, type(network)) and cidr.subnet_of(network):
+            if (isinstance(network, ipaddress.IPv4Network) and isinstance(cidr, ipaddress.IPv4Network) and cidr.subnet_of(network)) or (isinstance(network, ipaddress.IPv6Network) and isinstance(cidr, ipaddress.IPv6Network) and cidr.subnet_of(network)):
                 rule["CidrIp"] = str(network)
                 if description:
                     rule["Description"] = description
