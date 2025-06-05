@@ -150,17 +150,6 @@ def load_known_networks(path: str) -> List[Tuple[ipaddress._BaseNetwork, str]]:
     return known_networks
 
 
-def remap_cidr(rule: dict, known_networks: List[ipaddress._BaseNetwork]) -> dict:
-    try:
-        cidr = ipaddress.ip_network(rule["CidrIp"])
-        for network in known_networks:
-            if isinstance(cidr, type(network)) and cidr.subnet_of(network):
-                rule["CidrIp"] = str(network)
-                break
-    except ValueError:
-        pass  # Leave as-is if invalid
-    return rule
-
 def remap_cidr(rule: dict, known_networks: List[Tuple[ipaddress._BaseNetwork, str]]) -> dict:
     try:
         cidr = ipaddress.ip_network(rule["CidrIp"])
