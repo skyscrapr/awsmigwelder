@@ -16,11 +16,10 @@ LOGGER = logging.getLogger(__name__)
 class Discovery:
     """Discovery"""
 
-    def export_server_security_group_rules(self, server_id, output_path):
+    def export_server_security_group_rules(self, server_id, output_path, region):
         # --- Configuration ---
-        region = "us-east-1"
         service = "discovery"
-        endpoint = "https://api.us-east-1.prod.adm.migrationhub.aws.a2z.com/"
+        endpoint = f"https://api.{region}.prod.adm.migrationhub.aws.a2z.com/"
         target = "AWSADMAPIService.GetNetworkConnectionGraph"
         payload = {"Resources": {"GetByServerIds": {"ServerIds": [server_id]}}}
         headers = {

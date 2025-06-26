@@ -4,6 +4,7 @@
 import argparse
 import ipaddress
 import logging
+import os
 import sys
 import csv
 from aws.discovery import Discovery
@@ -249,8 +250,14 @@ def main():
         ec2.export_security_group_rules(args.id, args.output)
 
     elif args.command == "export-server-sg-rules":
+        # Extract the region from the environment variable
+        region = os.getenv('AWS_REGION')
+
+        # Ensure that the region is set
+        if not region:
+            raise EnvironmentError("AWS_REGION environment variable is not set.")
         discovery = Discovery()
-        discovery.export_server_security_group_rules(args.id, args.output)
+        discovery.export_server_security_group_rules(args.id, args.output, region)
 
     elif args.command == "consolidate-sg-rules":
         input_rules = read_rules_from_csv(args.input)

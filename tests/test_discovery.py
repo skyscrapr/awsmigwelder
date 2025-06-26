@@ -53,7 +53,7 @@ def test_export_server_security_group_rules(mock_session, mock_post, tmp_path):
 
     # Run the method
     d = Discovery()
-    d.export_server_security_group_rules("d-server-123", str(output_file))
+    d.export_server_security_group_rules("d-server-123", str(output_file), "us-east-1")
 
     # Assert output CSV exists and has expected content
     assert output_file.exists()

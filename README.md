@@ -132,7 +132,8 @@ aws-mig-welder/
 ├── tests/
 │   ├── __init__.py
 │   ├── test_discovery.py
-│   └── test_ec2.py
+│   ├── test_ec2.py
+|   └── test_migwelder.py
 ├── setup.py
 ├── requirements.txt
 ├── README.md
