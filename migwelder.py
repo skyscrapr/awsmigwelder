@@ -251,7 +251,7 @@ def main():
 
     elif args.command == "export-server-sg-rules":
         # Extract the region from the environment variable
-        region = os.getenv('AWS_REGION')
+        region = os.getenv("AWS_REGION")
 
         # Ensure that the region is set
         if not region:
