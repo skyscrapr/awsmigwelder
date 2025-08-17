@@ -1,7 +1,8 @@
 """discovery"""
 
 import logging
-import boto3
+import os
+from pathlib import Path
 import csv
 import requests
 import botocore.auth
@@ -16,10 +17,47 @@ LOGGER = logging.getLogger(__name__)
 class Discovery:
     """Discovery"""
 
-    def export_server_security_group_rules(self, server_id, output_path, region):
+    def __init__(self):
+        self._aws_region = os.getenv("AWS_REGION")
+        if not self._aws_region:
+            raise EnvironmentError("AWS_REGION environment variable is not set.")
+
+
+    def export_mgn_servers(self, input_file, output_path):
+        """
+        Export MGN server network data for a list of servers in input CSV.
+        This will write one CSV per server into that directory specified.
+        """
+        # --- Read server IDs from CSV ---
+        server_ids = []
+        with open(input_file, 'r', newline='') as f:
+            reader = csv.DictReader(f)
+            for idx, row in enumerate(reader, start=1):
+                sid = (row.get('MGNServerID') or '').strip()
+                if not sid:
+                    LOGGER.warning(f"Row {idx}: missing MGNServerID, skipping")
+                    continue
+                server_ids.append(sid)
+
+        # De-duplicate while preserving order
+        seen = set()
+        server_ids = [s for s in server_ids if not (s in seen or seen.add(s))]
+
+        if not server_ids:
+            raise ValueError("No MGNServerID values found in input CSV.")
+
+        out = Path(output_path)
+        out.mkdir(parents=True, exist_ok=True)
+        for server_id in server_ids:
+            print(f"server: {server_id}")
+            per_file = out / f"{server_id}.csv"
+            self.export_mgn_server_network_data(server_id, str(per_file))
+
+
+    def export_mgn_server_network_data(self, server_id, output_path):
         # --- Configuration ---
         service = "discovery"
-        endpoint = f"https://api.{region}.prod.adm.migrationhub.aws.a2z.com/"
+        endpoint = f"https://api.{self._aws_region}.prod.adm.migrationhub.aws.a2z.com/"
         target = "AWSADMAPIService.GetNetworkConnectionGraph"
         payload = {"Resources": {"GetByServerIds": {"ServerIds": [server_id]}}}
         headers = {
@@ -36,7 +74,7 @@ class Discovery:
             data=json.dumps(payload),
             headers=headers,
         )
-        sigv4 = botocore.auth.SigV4Auth(credentials, service, region)
+        sigv4 = botocore.auth.SigV4Auth(credentials, service, self._aws_region)
         sigv4.add_auth(request)
 
         # --- Send the request ---
@@ -62,39 +100,53 @@ class Discovery:
             ]
             if not destination_ids:
                 print(f"❌ No node found with serverId: {server_id}")
-                exit(1)
+                return
 
             destination_id = destination_ids[0]
-            print(f"⚠️ DestinationId: {destination_id}")
+            dest_node = nodes[destination_id]
+
+            hostname = dest_node.get("Attributes", {}).get("hostname", {}).get("S", "")
+            account_id = ""
+            try:
+                sts = session.create_client("sts", region_name=self._aws_region)
+                account_id = sts.get_caller_identity()["Account"]
+            except Exception as e:
+                LOGGER.warning(f"Could not resolve AWS Account ID via STS: {e}")
+            
+            print(f"⚠️ DestinationId: {destination_id} | Hostname: {hostname} | Account: {account_id}")
 
             if not edges:
                 print("⚠️ No connections found for the specified host")
-                exit(0)
+                return
 
             # Generate simplified ingress rule rows
             rules = []
             for edge in edges:
                 source_node = nodes.get(edge.get("Source"))
-                for port in edge.get("Attributes", {}).get("ports", {}).get("IS", ""):
+                target_node = nodes.get(edge.get("Target"))
+                for port in edge.get("Attributes", {}).get("ports", {}).get("IS", []):
+                    ingress = edge.get("Target") == destination_id
+
                     rule = {
-                        "Type": (
-                            "ingress"
-                            if edge.get("Target") == destination_id
-                            else "egress"
-                        ),
+                        "AccountId": account_id,
+                        "Hostname": hostname,
+                        "Type": "ingress" if ingress else "egress",
                         "IpProtocol": edge.get("Protocol", "tcp"),
                         "FromPort": port,
                         "ToPort": port,
                         "CidrIp": f"{source_node.get('Attributes', {}).get('ipv4Addresses', {}).get('SS', [''])[0]}/32",
-                        "Description": source_node.get("Attributes", {})
-                        .get("hostname", {})
-                        .get("S", ""),
+                        "Description": (
+                            source_node.get("Attributes", {}).get("hostname", {}).get("S", "")
+                            if ingress else target_node.get("Attributes", {}).get("hostname", {}).get("S", "")
+                        )
                     }
                     rules.append(rule)
 
             # Write to CSV
             with open(output_path, "w", newline="") as csvfile:
                 fieldnames = [
+                    "AccountId",
+                    "Hostname",
                     "Type",
                     "IpProtocol",
                     "FromPort",
@@ -112,21 +164,3 @@ class Discovery:
             print(f"❌ Request failed with status {response.status_code}")
             print(response.text)
 
-    def export_server_inventory(self, output_path):
-        client = boto3.client("discovery")
-
-        paginator = client.get_paginator("list_configurations")
-        page_iterator = paginator.paginate(configurationType="SERVER")
-
-        first_row = True
-        with open(output_path, mode="w", newline="") as out_file:
-            for page in page_iterator:
-                for config in page["configurations"]:
-                    if first_row:
-                        fieldnames = list(config.keys())
-                        writer = csv.DictWriter(out_file, fieldnames=fieldnames)
-                        writer.writeheader()
-                        first_row = False
-                    writer.writerow(config)
-
-        print("✅ File created: {output_path}")

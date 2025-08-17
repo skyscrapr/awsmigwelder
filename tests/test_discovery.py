@@ -35,7 +35,7 @@ def fake_mh_response(server_id):
 
 @patch("aws.discovery.requests.post")
 @patch("botocore.session.get_session")
-def test_export_server_security_group_rules(mock_session, mock_post, tmp_path):
+def test_export_mgn_server_network_data(mock_session, mock_post, tmp_path):
     # Setup mocks
     creds = MagicMock()
     creds.access_key = "ak"
@@ -53,7 +53,7 @@ def test_export_server_security_group_rules(mock_session, mock_post, tmp_path):
 
     # Run the method
     d = Discovery()
-    d.export_server_security_group_rules("d-server-123", str(output_file), "us-east-1")
+    d.export_mgn_server_network_data("d-server-123", str(output_file), "us-east-1")
 
     # Assert output CSV exists and has expected content
     assert output_file.exists()

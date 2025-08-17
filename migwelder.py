@@ -4,12 +4,12 @@
 import argparse
 import ipaddress
 import logging
-import os
 import sys
 import csv
 from aws.discovery import Discovery
 from aws.ec2 import EC2
 from typing import List, Dict, Tuple
+
 
 
 # def parse_rule(row: Dict[str, str]) -> Tuple:
@@ -189,23 +189,9 @@ def main():
     parser = argparse.ArgumentParser(description="Migration Utilities")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    # Subcommand: export-sg-rules
-    sg_parser = subparsers.add_parser(
-        "export-sg-rules", help="Export security group rules"
-    )
-    sg_parser.add_argument(
-        "-i", "--id", required=True, help="The security group ID to export rules from."
-    )
-    sg_parser.add_argument(
-        "-o",
-        "--output",
-        required=True,
-        help="The path and filename to write the output to.",
-    )
-
-    # Subcommand: export-server-sg-rules
+    # Subcommand: export-mgn-server-network-data
     server_sg_parser = subparsers.add_parser(
-        "export-server-sg-rules", help="Export server security group rules"
+        "export-mgn-server-network-data", help="Export MGN server discovery network data"
     )
     server_sg_parser.add_argument(
         "-i",
@@ -220,7 +206,21 @@ def main():
         help="The path and filename to write the output to.",
     )
 
-    # Subcommand: consolidate-sg-rules
+    # Subcommand: export-mgn-servers
+    sd_parser = subparsers.add_parser(
+        "export-mgn-servers", help="Export data for given list of servers"
+    )
+    sd_parser.add_argument(
+        "-i", "--input", required=True, help="The inventory of servers to export."
+    )
+    sd_parser.add_argument(
+        "-o",
+        "--output",
+        required=True,
+        help="The folder path to write the output files to.",
+    )
+
+     # Subcommand: consolidate-sg-rules
     consolidate_parser = subparsers.add_parser(
         "consolidate-sg-rules", help="Export server security group rules."
     )
@@ -242,23 +242,29 @@ def main():
         required=True,
         help="The path and filename to write the output to.",
     )
+    # # Subcommand: export-sg-rules
+    # sg_parser = subparsers.add_parser(
+    #     "export-sg-rules", help="Export security group rules"
+    # )
+    # sg_parser.add_argument(
+    #     "-i", "--id", required=True, help="The security group ID to export rules from."
+    # )
+    # sg_parser.add_argument(
+    #     "-o",
+    #     "--output",
+    #     required=True,
+    #     help="The path and filename to write the output to.",
+    # )
 
     args = parser.parse_args()
 
-    if args.command == "export-sg-rules":
-        ec2 = EC2()
-        ec2.export_security_group_rules(args.id, args.output)
+    discovery = Discovery()
+    if args.command == "export-mgn-server-network-data":    
+        discovery.export_mgn_server_network_data(args.id, args.output)
+    elif args.command == "export-mgn-servers":
+        discovery.export_mgn_servers(args.input, args.output)
 
-    elif args.command == "export-server-sg-rules":
-        # Extract the region from the environment variable
-        region = os.getenv("AWS_REGION")
-
-        # Ensure that the region is set
-        if not region:
-            raise EnvironmentError("AWS_REGION environment variable is not set.")
-        discovery = Discovery()
-        discovery.export_server_security_group_rules(args.id, args.output, region)
-
+    # TODO: review below
     elif args.command == "consolidate-sg-rules":
         input_rules = read_rules_from_csv(args.input)
         default_rules = read_rules_from_csv(args.default) if args.default else []
@@ -269,7 +275,10 @@ def main():
             new_rules = [remap_cidr(r, known_networks) for r in new_rules]
             new_rules = deduplicate_rules(new_rules)
         new_rules = consolidate_rules(new_rules)
-        write_rules_to_csv(args.output, new_rules)
+        write_rules_to_csv(args.output, new_rules)  
+    elif args.command == "export-sg-rules":
+        ec2 = EC2()
+        ec2.export_security_group_rules(args.id, args.output)
 
 
 if __name__ == "__main__":
