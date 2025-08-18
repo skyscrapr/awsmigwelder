@@ -2,7 +2,6 @@
 
 import logging
 import os
-from pathlib import Path
 import csv
 import requests
 import botocore.auth
@@ -21,38 +20,6 @@ class Discovery:
         self._aws_region = os.getenv("AWS_REGION")
         if not self._aws_region:
             raise EnvironmentError("AWS_REGION environment variable is not set.")
-
-
-    def export_mgn_servers(self, input_file, output_path):
-        """
-        Export MGN server network data for a list of servers in input CSV.
-        This will write one CSV per server into that directory specified.
-        """
-        # --- Read server IDs from CSV ---
-        server_ids = []
-        with open(input_file, 'r', newline='') as f:
-            reader = csv.DictReader(f)
-            for idx, row in enumerate(reader, start=1):
-                sid = (row.get('MGNServerID') or '').strip()
-                if not sid:
-                    LOGGER.warning(f"Row {idx}: missing MGNServerID, skipping")
-                    continue
-                server_ids.append(sid)
-
-        # De-duplicate while preserving order
-        seen = set()
-        server_ids = [s for s in server_ids if not (s in seen or seen.add(s))]
-
-        if not server_ids:
-            raise ValueError("No MGNServerID values found in input CSV.")
-
-        out = Path(output_path)
-        out.mkdir(parents=True, exist_ok=True)
-        for server_id in server_ids:
-            print(f"server: {server_id}")
-            per_file = out / f"{server_id}.csv"
-            self.export_mgn_server_network_data(server_id, str(per_file))
-
 
     def export_mgn_server_network_data(self, server_id, output_path):
         # --- Configuration ---

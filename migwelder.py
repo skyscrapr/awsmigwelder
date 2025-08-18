@@ -4,35 +4,110 @@
 import argparse
 import ipaddress
 import logging
+from pathlib import Path
 import sys
 import csv
 from aws.discovery import Discovery
-from aws.ec2 import EC2
 from typing import List, Dict, Tuple
 
 
+LOGGER = logging.getLogger(__name__)
 
-# def parse_rule(row: Dict[str, str]) -> Tuple:
-#     """Normalize rule fields to a hashable tuple key."""
-#     def safe_int(value):
-#         try:
-#             return int(value)
-#         except (ValueError, TypeError):
-#             return None
 
-#     fromPort = row["FromPort"] or ""
-#     fromPort = safe_int(fromPort)
+def process_inventory(discovery, input_file, output_path, known_networks, default_rules):
+    """
+    Process inventory
 
-#     toPort = row["ToPort"] or ""
-#     toPort = safe_int(toPort)
+    For a given inventory
+    1. export MGN server network data.
+    2. enrich rules with network information.
+    3. apply defaults and exclusions.
+    4. create aggregated output.
+    """
+    # --- Read server IDs from CSV ---
+    server_ids = []
+    with open(input_file, 'r', newline='') as f:
+        reader = csv.DictReader(f)
+        for idx, row in enumerate(reader, start=1):
+            sid = (row.get('MGNServerID') or '').strip()
+            if not sid:
+                LOGGER.warning(f"Row {idx}: missing MGNServerID, skipping")
+                continue
+            server_ids.append(sid)
 
-#     return (
-#         row["Type"].strip().lower(),
-#         row["IpProtocol"].strip().lower(),
-#         fromPort,
-#         toPort,
-#         row["CidrIp"].strip().lower(),
-#     )
+    # De-duplicate while preserving order
+    seen = set()
+    server_ids = [s for s in server_ids if not (s in seen or seen.add(s))]
+
+    if not server_ids:
+        raise ValueError("No MGNServerID values found in input CSV.")
+
+    out = Path(output_path)
+    out.mkdir(parents=True, exist_ok=True)
+
+    out_raw = out / f"1-Raw"
+    out_raw.mkdir(parents=True, exist_ok=True)
+
+    out_enriched = out / f"2-Enriched"
+    out_enriched.mkdir(parents=True, exist_ok=True)
+
+    out_processed = out / f"3-Processed"
+    out_processed.mkdir(parents=True, exist_ok=True)
+    
+    # Single, aggregated file
+    aggregate_csv = out / "all_rules.csv"
+    preferred = [
+        "ServerId", "AccountId", "Hostname",
+        "Type", "IpProtocol", "FromPort", "ToPort",
+        "CidrIp", "Description"
+    ]
+
+    for server_id in server_ids:
+        print(f"server: {server_id}")
+        raw_file = out_raw / f"{server_id}.csv"
+        discovery.export_mgn_server_network_data(server_id, str(raw_file))
+
+        enriched_file = out_enriched / f"{server_id}.csv"
+        rules = overlay_rules(raw_file, known_networks, str(enriched_file))
+
+        processed_file = out_processed / f"{server_id}.csv"
+        override_rules(enriched_file, default_rules, str(processed_file))
+
+        append_rules_to_csv(
+            output_csv=aggregate_csv,
+            rows=rules or [],
+            extra_cols={"ServerId": server_id},
+            preferred_order=preferred
+        )
+
+
+def overlay_rules(input_file, rules_file, output_file):
+    input_rules = read_rules_from_csv(input_file)
+    new_rules = input_rules
+    if rules_file:
+        overlay_rules = load_rules(rules_file)
+        new_rules = [remap_cidr(r, overlay_rules) for r in new_rules]
+        new_rules = deduplicate_rules(new_rules)
+    new_rules = consolidate_rules(new_rules)
+    write_rules_to_csv(output_file, new_rules)
+    return new_rules
+
+
+def override_rules(input_file, rules_file, output_file):
+    input_rules = read_rules_from_csv(input_file)
+    override_rules = read_rules_from_csv(rules_file) if rules_file else []
+
+    account_id = next((r.get("AccountId") for r in input_rules if r.get("AccountId")), "")
+    hostname   = next((r.get("Hostname")   for r in input_rules if r.get("Hostname")),   "")
+
+    for r in override_rules:
+        r.setdefault("AccountId", account_id)
+        r.setdefault("Hostname",   hostname)
+
+    new_rules = override_rules + input_rules
+    new_rules = deduplicate_rules(new_rules)
+    write_rules_to_csv(output_file, new_rules)
+    return new_rules
 
 
 def read_rules_from_csv(file_path: str) -> List[Dict[str, str]]:
@@ -81,7 +156,7 @@ def consolidate_rules(rules: List[Dict[str, str]]) -> List[Dict[str, str]]:
 
 def write_rules_to_csv(file_path: str, rules: List[Dict[str, str]]) -> None:
     """Write consolidated rules to a CSV file."""
-    fieldnames = ["Type", "IpProtocol", "FromPort", "ToPort", "CidrIp", "Description"]
+    fieldnames = ["AccountId", "Hostname", "Type", "IpProtocol", "FromPort", "ToPort", "CidrIp", "Description"]
     with open(file_path, mode="w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
@@ -136,22 +211,22 @@ def is_covered(broader: dict, specific: dict) -> bool:
         return False
 
 
-def load_known_networks(
+def load_rules(
     path: str,
 ) -> List[Tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, str]]:
     import csv
 
-    known_networks = []
+    rules = []
     with open(path) as f:
         reader = csv.DictReader(f)
         for row in reader:
             try:
                 net = ipaddress.ip_network(row["CidrIp"].strip())
                 desc = row.get("Description", "").strip()
-                known_networks.append((net, desc))
+                rules.append((net, desc))
             except ValueError:
                 continue
-    return known_networks
+    return rules
 
 
 def remap_cidr(
@@ -176,6 +251,57 @@ def remap_cidr(
     except ValueError:
         pass
     return rule
+
+
+def append_rules_to_csv(output_csv, rows, extra_cols=None, preferred_order=None):
+    """
+    Append rows (list[dict]) to output_csv.
+    - Writes header once (creates file if missing).
+    - Ensures a stable column order (preferred_order first, then any others).
+    - Fills missing keys with "".
+    - extra_cols (dict) is merged into every row (e.g., {"ServerId": "..."}).
+    """
+    from pathlib import Path
+    import csv
+
+    output_csv = Path(output_csv)
+    exists = output_csv.exists()
+
+    # Merge extras
+    if extra_cols:
+        rows = [{**r, **extra_cols} for r in rows]
+
+    if not rows:
+        return  # nothing to append
+
+    # Determine fieldnames
+    if exists:
+        # Reuse existing header
+        with output_csv.open("r", newline="", encoding="utf-8") as fh:
+            reader = csv.reader(fh)
+            header = next(reader, None)
+        fieldnames = header if header else list(rows[0].keys())
+    else:
+        # Build union of keys across incoming rows
+        seen = set()
+        union = []
+        for r in rows:
+            for k in r.keys():
+                if k not in seen:
+                    union.append(k); seen.add(k)
+        # Put preferred columns first if provided
+        if preferred_order:
+            fieldnames = [c for c in preferred_order if c in union] + [c for c in union if c not in preferred_order]
+        else:
+            fieldnames = union
+
+    # Append/write
+    with output_csv.open("a" if exists else "w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fieldnames)
+        if not exists:
+            writer.writeheader()
+        for r in rows:
+            writer.writerow({k: r.get(k, "") for k in fieldnames})
 
 
 def main():
@@ -206,9 +332,32 @@ def main():
         help="The path and filename to write the output to.",
     )
 
-    # Subcommand: export-mgn-servers
+    # Subcommand: overlay_rules
+    consolidate_parser = subparsers.add_parser(
+        "overlay_rules", help="Overlay rules and consolidate CIDRs."
+    )
+    consolidate_parser.add_argument(
+        "-i", "--input", required=True, help="The rules to consolidate."
+    )
+    # consolidate_parser.add_argument(
+    #     "-d", "--default", required=False, help="The default rules to add to the set."
+    # )
+    consolidate_parser.add_argument(
+        "-r",
+        "--rules",
+        required=False,
+        help="Rules to overlay CIDRs will be replace with wider ranges if matched.",
+    )
+    consolidate_parser.add_argument(
+        "-o",
+        "--output",
+        required=True,
+        help="The filename to write the output to.",
+    )
+
+    # Subcommand: process-inventory
     sd_parser = subparsers.add_parser(
-        "export-mgn-servers", help="Export data for given list of servers"
+        "process-inventory", help="Process a given inventory. Export the MGN data, enrich with known networks and apply defaults"
     )
     sd_parser.add_argument(
         "-i", "--input", required=True, help="The inventory of servers to export."
@@ -219,66 +368,23 @@ def main():
         required=True,
         help="The folder path to write the output files to.",
     )
+    sd_parser.add_argument(
+        "-k", "--known-networks", required=True, help="known networks to overlay"
+    )
+    sd_parser.add_argument(
+        "-d", "--default-rules", required=True, help="default rules to apply"
+    )
 
-     # Subcommand: consolidate-sg-rules
-    consolidate_parser = subparsers.add_parser(
-        "consolidate-sg-rules", help="Export server security group rules."
-    )
-    consolidate_parser.add_argument(
-        "-i", "--input", required=True, help="The server rules to consolidate."
-    )
-    consolidate_parser.add_argument(
-        "-d", "--default", required=False, help="The default rules to add to the set."
-    )
-    consolidate_parser.add_argument(
-        "-k",
-        "--known-networks",
-        required=False,
-        help="Known networks to replace narrower ranges with.",
-    )
-    consolidate_parser.add_argument(
-        "-o",
-        "--output",
-        required=True,
-        help="The path and filename to write the output to.",
-    )
-    # # Subcommand: export-sg-rules
-    # sg_parser = subparsers.add_parser(
-    #     "export-sg-rules", help="Export security group rules"
-    # )
-    # sg_parser.add_argument(
-    #     "-i", "--id", required=True, help="The security group ID to export rules from."
-    # )
-    # sg_parser.add_argument(
-    #     "-o",
-    #     "--output",
-    #     required=True,
-    #     help="The path and filename to write the output to.",
-    # )
 
     args = parser.parse_args()
 
     discovery = Discovery()
-    if args.command == "export-mgn-server-network-data":    
+    if args.command == "process-inventory":
+        process_inventory(discovery, args.input, args.output, args.known_networks, args.default_rules)
+    elif args.command == "export-mgn-server":    
         discovery.export_mgn_server_network_data(args.id, args.output)
-    elif args.command == "export-mgn-servers":
-        discovery.export_mgn_servers(args.input, args.output)
-
-    # TODO: review below
-    elif args.command == "consolidate-sg-rules":
-        input_rules = read_rules_from_csv(args.input)
-        default_rules = read_rules_from_csv(args.default) if args.default else []
-        new_rules = default_rules + input_rules
-        new_rules = deduplicate_rules(new_rules)
-        if args.known_networks:
-            known_networks = load_known_networks(args.known_networks)
-            new_rules = [remap_cidr(r, known_networks) for r in new_rules]
-            new_rules = deduplicate_rules(new_rules)
-        new_rules = consolidate_rules(new_rules)
-        write_rules_to_csv(args.output, new_rules)  
-    elif args.command == "export-sg-rules":
-        ec2 = EC2()
-        ec2.export_security_group_rules(args.id, args.output)
+    elif args.command == "overlay_rules":
+        overlay_rules(args.input, args.rules, args.output)
 
 
 if __name__ == "__main__":
