@@ -3,6 +3,7 @@
 import logging
 import os
 import csv
+import boto3
 import requests
 import botocore.auth
 import botocore.awsrequest
@@ -15,11 +16,24 @@ LOGGER = logging.getLogger(__name__)
 
 class Discovery:
     """Discovery"""
-
-    def __init__(self):
-        self._aws_region = os.getenv("AWS_REGION")
+        
+    def set_profile(self, profile):
+        self.session = botocore.session.Session(profile=profile)
+        self._aws_region = self.session.get_config_variable("region")
         if not self._aws_region:
-            raise EnvironmentError("AWS_REGION environment variable is not set.")
+            raise EnvironmentError("AWS region not set in profile.")
+        
+        # Resolve account ID once
+        self._aws_account_id = ""
+        try:
+            # Use boto3 Session with the same botocore session
+            b3 = boto3.session.Session(botocore_session=self.session)
+            sts = b3.client("sts")
+            ident = sts.get_caller_identity()
+            self._aws_account_id = ident["Account"]
+        except Exception as e:
+            LOGGER.warning(f"Could not resolve AWS Account ID via STS for profile {profile}: {e}")
+
 
     def export_mgn_server_network_data(self, server_id, output_path):
         # --- Configuration ---
@@ -34,7 +48,8 @@ class Discovery:
 
         # --- AWS SigV4 Signing ---
         session = botocore.session.get_session()
-        credentials = session.get_credentials()
+        # Use the session tied to the selected profile
+        credentials = self.session.get_credentials().get_frozen_credentials()
         request = botocore.awsrequest.AWSRequest(
             method="POST",
             url=endpoint,
@@ -73,12 +88,7 @@ class Discovery:
             dest_node = nodes[destination_id]
 
             hostname = dest_node.get("Attributes", {}).get("hostname", {}).get("S", "")
-            account_id = ""
-            try:
-                sts = session.create_client("sts", region_name=self._aws_region)
-                account_id = sts.get_caller_identity()["Account"]
-            except Exception as e:
-                LOGGER.warning(f"Could not resolve AWS Account ID via STS: {e}")
+            account_id = self._aws_account_id
             
             print(f"⚠️ DestinationId: {destination_id} | Hostname: {hostname} | Account: {account_id}")
 
@@ -126,6 +136,7 @@ class Discovery:
                 writer.writerows(rules)
 
             print(f"✅ Rules exported to {output_path}")
+            return True
 
         else:
             print(f"❌ Request failed with status {response.status_code}")
