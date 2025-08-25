@@ -29,6 +29,9 @@ jobs:
         run: |
           pytest --tb=short
 
+      - name: Coverage
+        run: pytest -q --cov=aws --cov=migwelder --cov-report=xml
+
       - name: Lint with ruff
         run: |
           ruff check aws/ tests/ migwelder.py
