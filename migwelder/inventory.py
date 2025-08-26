@@ -173,7 +173,6 @@ def apply_exclusions(input_file, exclusions, output_file):
 
     print(f"apply_exclusions: {dropped} excluded, {len(kept)} kept → {output_file}")
 
-
 def overlay_networks(input_file, networks_file, output_file):
     input_rules = read_rules_from_csv(input_file)
     new_rules = input_rules
@@ -184,7 +183,6 @@ def overlay_networks(input_file, networks_file, output_file):
     new_rules = consolidate_rules(new_rules)
     write_rules_to_csv(output_file, new_rules)
     return new_rules
-
 
 def overlay_firewalls(input_file, firewalls_file, output_file):
     input_rules = read_rules_from_csv(input_file)
@@ -245,13 +243,11 @@ def override_rules(input_file, rules_file, output_file):
     write_rules_to_csv(output_file, new_rules)
     return new_rules
 
-
 def read_rules_from_csv(file_path: str) -> List[Dict[str, str]]:
     """Read security rules from a CSV file into a list of dictionaries."""
     with open(file_path, mode="r", newline="") as f:
         reader = csv.DictReader(f)
         return list(reader)
-
 
 def deduplicate_rules(rules: List[Dict[str, str]]) -> List[Dict[str, str]]:
     seen = set()
@@ -271,7 +267,6 @@ def deduplicate_rules(rules: List[Dict[str, str]]) -> List[Dict[str, str]]:
             unique_rules.append(rule)
     return unique_rules
 
-
 def consolidate_rules(rules: List[Dict[str, str]]) -> List[Dict[str, str]]:
     """Consolidate Rules."""
     consolidated = []
@@ -289,7 +284,6 @@ def consolidate_rules(rules: List[Dict[str, str]]) -> List[Dict[str, str]]:
 
     return consolidated
 
-
 def write_rules_to_csv(file_path: str, rules: List[Dict[str, str]]) -> None:
     """Write consolidated rules to a CSV file."""
     fieldnames = ["AccountId", "Hostname", "Type", "IpProtocol", "FromPort", "ToPort", "CidrIp", "Description", "Allowed"]
@@ -298,7 +292,6 @@ def write_rules_to_csv(file_path: str, rules: List[Dict[str, str]]) -> None:
         writer.writeheader()
         for rule in rules:
             writer.writerow(rule)
-
 
 def is_covered(broader: dict, specific: dict) -> bool:
     # Type (ingress/egress) must match
@@ -346,7 +339,6 @@ def is_covered(broader: dict, specific: dict) -> bool:
     except ValueError:
         return False
 
-
 def load_rules(
     path: str,
 ) -> List[Tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, str]]:
@@ -363,7 +355,6 @@ def load_rules(
             except ValueError:
                 continue
     return rules
-
 
 def remap_cidr(
     rule: dict, known_networks: List[Tuple[ipaddress._BaseNetwork, str]]
@@ -387,54 +378,3 @@ def remap_cidr(
     except ValueError:
         pass
     return rule
-
-
-def append_rules_to_csv(output_csv, rows, extra_cols=None, preferred_order=None):
-    """
-    Append rows (list[dict]) to output_csv.
-    - Writes header once (creates file if missing).
-    - Ensures a stable column order (preferred_order first, then any others).
-    - Fills missing keys with "".
-    - extra_cols (dict) is merged into every row (e.g., {"ServerId": "..."}).
-    """
-    from pathlib import Path
-    import csv
-
-    output_csv = Path(output_csv)
-    exists = output_csv.exists()
-
-    # Merge extras
-    if extra_cols:
-        rows = [{**r, **extra_cols} for r in rows]
-
-    if not rows:
-        return  # nothing to append
-
-    # Determine fieldnames
-    if exists:
-        # Reuse existing header
-        with output_csv.open("r", newline="", encoding="utf-8") as fh:
-            reader = csv.reader(fh)
-            header = next(reader, None)
-        fieldnames = header if header else list(rows[0].keys())
-    else:
-        # Build union of keys across incoming rows
-        seen = set()
-        union = []
-        for r in rows:
-            for k in r.keys():
-                if k not in seen:
-                    union.append(k); seen.add(k)
-        # Put preferred columns first if provided
-        if preferred_order:
-            fieldnames = [c for c in preferred_order if c in union] + [c for c in union if c not in preferred_order]
-        else:
-            fieldnames = union
-
-    # Append/write
-    with output_csv.open("a" if exists else "w", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=fieldnames)
-        if not exists:
-            writer.writeheader()
-        for r in rows:
-            writer.writerow({k: r.get(k, "") for k in fieldnames})

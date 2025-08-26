@@ -95,9 +95,6 @@ def main():
     inventory = Inventory(discovery)
     if args.command == "process-inventory":
         inventory.load_inventory(args.inventory)
-        # inventory.load_networks(args.networks)
-        # inventory.load_exclusions(args.exclusions)
-        # inventory.load_defaults(args.defaults)
         inventory.process(args.output, args.exclusions, args.networks, args.firewalls, args.defaults)
     elif args.command == "export-mgn-server":    
         discovery.export_mgn_server_network_data(args.id, args.output)

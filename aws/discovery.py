@@ -141,4 +141,3 @@ class Discovery:
         else:
             print(f"❌ Request failed with status {response.status_code}")
             print(response.text)
-
