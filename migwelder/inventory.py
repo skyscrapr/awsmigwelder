@@ -23,20 +23,23 @@ class Inventory:
         Process inventory
 
         For a given inventory
-        1. export MGN network data (Raw)
+        1. export MGN network data (1. Raw)
         2. apply exclusions to remove unnecessary data.
-        3. enrich data with network information and firewall check (Enriched)
+        3. enrich data with network information and firewall check for source machines (2. Source)
+        3. enrich data with network information and firewall check for target machines (3. Target)
         4. apply defaults and consolidate. (Processed)
         """
 
         out = Path(output_path)
         out_raw = out / f"1-Raw"
-        out_enriched = out / f"2-Enriched"
-        out_processed = out / f"3-Processed"
+        out_source = out / f"2-Source"
+        out_target = out / f"3-Target"
+        out_consolidated = out / f"4-Consolidated"
         out.mkdir(parents=True, exist_ok=True)
         out_raw.mkdir(parents=True, exist_ok=True)
-        out_enriched.mkdir(parents=True, exist_ok=True)      
-        out_processed.mkdir(parents=True, exist_ok=True)
+        out_source.mkdir(parents=True, exist_ok=True)  
+        out_target.mkdir(parents=True, exist_ok=True)      
+        out_consolidated.mkdir(parents=True, exist_ok=True)
 
         for server in self._inventory:
             server_id = server["MGNServerID"]
@@ -46,19 +49,24 @@ class Inventory:
             print(f"server: {server_id}")
             raw_file = out_raw / f"{server_id}.csv"
             if self._discovery.export_mgn_server_network_data(server_id, str(raw_file)):
-                enriched_file = out_enriched / f"{server_id}.csv"
-                apply_exclusions(raw_file, exclusions, str(enriched_file))
-                # (enriched_file, networks, str(enriched_file))
-                overlay_firewalls(enriched_file, firewalls, str(enriched_file))
+                source_file = out_source / f"{server_id}.csv"
+                target_file = out_target / f"{server_id}.csv"
 
-                processed_file = out_processed / f"{server_id}.csv"
-                overlay_networks(enriched_file, networks, str(processed_file))
-                override_rules(processed_file, defaults, str(processed_file))
-                overlay_firewalls(processed_file, firewalls, str(processed_file))
+                apply_exclusions(raw_file, exclusions, str(source_file))
+                apply_exclusions(raw_file, exclusions, str(target_file))
+                
+                overlay_firewalls(source_file, firewalls, str(source_file), server["SourceIPAddress"])
+                overlay_firewalls(target_file, firewalls, str(target_file), server["TargetIPAddress"])
+
+                consolidated_file = out_consolidated / f"{server_id}.csv"
+                overlay_networks(target_file, networks, str(consolidated_file))
+                override_rules(consolidated_file, defaults, str(consolidated_file))
+                overlay_firewalls(consolidated_file, firewalls, str(consolidated_file), server["TargetIPAddress"])
 
         combine_csv_files(out_raw, out / f"1-Raw.csv")
-        combine_csv_files(out_enriched, out / f"2-Enriched.csv")
-        combine_csv_files(out_processed, out / f"3-Processed.csv")
+        combine_csv_files(out_source, out / f"2-Source.csv")
+        combine_csv_files(out_target, out / f"3-Target.csv")
+        combine_csv_files(out_consolidated, out / f"4-Consolidated.csv")
 
 
 def combine_csv_files(directory: Path, output_file: Path):
@@ -184,13 +192,13 @@ def overlay_networks(input_file, networks_file, output_file):
     write_rules_to_csv(output_file, new_rules)
     return new_rules
 
-def overlay_firewalls(input_file, firewalls_file, output_file):
+def overlay_firewalls(input_file, firewalls_file, output_file, ip_address: str):
     input_rules = read_rules_from_csv(input_file)
     firewall_rules = read_firewall_rules(firewalls_file)
-    
+
     for rule in input_rules:
-        rule['Allowed'] = check_firewall_rules(rule, firewall_rules)
-    
+        rule['FWRule'] = check_firewall_rules(ip_address, rule, firewall_rules)
+
     write_rules_to_csv(output_file, input_rules)
 
 def read_firewall_rules(file_path):
@@ -202,6 +210,7 @@ def read_firewall_rules(file_path):
                 src_net = ipaddress.ip_network(row['Source'])
                 dst_net = ipaddress.ip_network(row['Destination'])
                 firewall_rules.append({
+                    'name': row['Name'],
                     'src_net': src_net,
                     'dst_net': dst_net,
                     'type': row['Type'].upper(),
@@ -213,18 +222,28 @@ def read_firewall_rules(file_path):
                 continue
     return firewall_rules
 
-def check_firewall_rules(rule, firewall_rules):
+def check_firewall_rules(ip_address, rule, firewall_rules):
     try:
-        rule_net = ipaddress.ip_network(rule['CidrIp'])
+        if rule['Type'] == "egress":
+            src = ipaddress.ip_network(ip_address)
+            dest = ipaddress.ip_network(rule['CidrIp'])
+        else:
+            src = ipaddress.ip_network(rule['CidrIp'])
+            dest = ipaddress.ip_network(ip_address)
+
+        # print(f"Checking FW Rules for src: {src} -> {dest}")
+
         for fw in firewall_rules:
-            if (fw['src_net'].supernet_of(rule_net) or fw['dst_net'].supernet_of(rule_net)):
+            # print(f"src_net: {fw['src_net']} dst_net: {fw['dst_net']}")
+            if (fw['src_net'].supernet_of(src) and fw['dst_net'].supernet_of(dest)):
                 if fw['ip_protocol'] == rule['IpProtocol'].upper() or fw['ip_protocol'] == 'ALL':
                     if fw['from_port'] is None or (fw['from_port'] <= int(rule['FromPort']) <= fw['to_port']):
                         if fw['to_port'] is None or (fw['from_port'] <= int(rule['ToPort']) <= fw['to_port']):
-                            return True
+                            print(f"Src: {src}, Dest: {dest}. FW Rule: {fw['name']}: (src_net: {fw['src_net']} dst_net: {fw['dst_net']})")
+                            return fw['name']
     except ValueError:
-        return False
-    return False
+        return "ERROR"
+    return "NO FIREWALL RULE FOUND"
 
 def override_rules(input_file, rules_file, output_file):
     input_rules = read_rules_from_csv(input_file)
@@ -286,7 +305,7 @@ def consolidate_rules(rules: List[Dict[str, str]]) -> List[Dict[str, str]]:
 
 def write_rules_to_csv(file_path: str, rules: List[Dict[str, str]]) -> None:
     """Write consolidated rules to a CSV file."""
-    fieldnames = ["AccountId", "Hostname", "Type", "IpProtocol", "FromPort", "ToPort", "CidrIp", "Description", "Allowed"]
+    fieldnames = ["AccountId", "Hostname", "Type", "IpProtocol", "FromPort", "ToPort", "CidrIp", "Description", "FWRule"]
     with open(file_path, mode="w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
