@@ -84,13 +84,13 @@ def combine_csv_files(directory: Path, output_file: Path):
 
     # Initialize a list to store all rows
     all_rows = []
-    headers = None
+    headers: list[str] = []
 
     for file in csv_files:
         with open(file, mode='r', newline='', encoding='utf-8-sig') as f:
             reader = csv.DictReader(f)
-            if headers is None:
-                headers = reader.fieldnames
+            if not headers and reader.fieldnames is not None:
+                headers = list(reader.fieldnames)
             for row in reader:
                 all_rows.append(row)
 
