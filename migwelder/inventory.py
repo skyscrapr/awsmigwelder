@@ -52,16 +52,21 @@ class Inventory:
                 source_file = out_source / f"{server_id}.csv"
                 target_file = out_target / f"{server_id}.csv"
 
-                apply_exclusions(raw_file, exclusions, str(source_file))
-                apply_exclusions(raw_file, exclusions, str(target_file))
-                
-                overlay_firewalls(source_file, firewalls, str(source_file), server["SourceIPAddress"])
-                overlay_firewalls(target_file, firewalls, str(target_file), server["TargetIPAddress"])
+                sourceIPAddress = server["SourceIPAddress"]
+                targetIPAddress = server["TargetIPAddress"] if server["TargetIPAddress"] else sourceIPAddress
 
-                consolidated_file = out_consolidated / f"{server_id}.csv"
-                overlay_networks(target_file, networks, str(consolidated_file))
-                override_rules(consolidated_file, defaults, str(consolidated_file))
-                overlay_firewalls(consolidated_file, firewalls, str(consolidated_file), server["TargetIPAddress"])
+                if sourceIPAddress:
+                    apply_exclusions(raw_file, [], str(source_file)) # no exclusion for source
+                    overlay_firewalls(source_file, firewalls, str(source_file), sourceIPAddress)
+
+                if targetIPAddress:
+                    apply_exclusions(raw_file, exclusions, str(target_file))
+                    overlay_firewalls(target_file, firewalls, str(target_file), targetIPAddress)
+
+                    consolidated_file = out_consolidated / f"{server_id}.csv"
+                    overlay_networks(target_file, networks, str(consolidated_file))
+                    override_rules(consolidated_file, defaults, str(consolidated_file))
+                    overlay_firewalls(consolidated_file, firewalls, str(consolidated_file), targetIPAddress)
 
         combine_csv_files(out_raw, out / f"1-Raw.csv")
         combine_csv_files(out_source, out / f"2-Source.csv")
@@ -213,10 +218,9 @@ def read_firewall_rules(file_path):
                     'name': row['Name'],
                     'src_net': src_net,
                     'dst_net': dst_net,
-                    'type': row['Type'].upper(),
                     'from_port': int(row['FromPort']) if row['FromPort'] else None,
                     'to_port': int(row['ToPort']) if row['ToPort'] else None,
-                    'ip_protocol': row['Type'].upper()
+                    'ip_protocol': row['Protocol'].upper()
                 })
             except ValueError:
                 continue
@@ -225,13 +229,13 @@ def read_firewall_rules(file_path):
 def check_firewall_rules(ip_address, rule, firewall_rules):
     try:
         if rule['Type'] == "egress":
-            src = ipaddress.ip_network(ip_address)
+            src = ipaddress.ip_network(ip_address, strict=False)
             dest = ipaddress.ip_network(rule['CidrIp'])
         else:
             src = ipaddress.ip_network(rule['CidrIp'])
-            dest = ipaddress.ip_network(ip_address)
+            dest = ipaddress.ip_network(ip_address, strict=False)
 
-        # print(f"Checking FW Rules for src: {src} -> {dest}")
+        # print(f"Checking FW Rules for ip: {ip_address}")
 
         for fw in firewall_rules:
             # print(f"src_net: {fw['src_net']} dst_net: {fw['dst_net']}")
@@ -239,7 +243,7 @@ def check_firewall_rules(ip_address, rule, firewall_rules):
                 if fw['ip_protocol'] == rule['IpProtocol'].upper() or fw['ip_protocol'] == 'ALL':
                     if fw['from_port'] is None or (fw['from_port'] <= int(rule['FromPort']) <= fw['to_port']):
                         if fw['to_port'] is None or (fw['from_port'] <= int(rule['ToPort']) <= fw['to_port']):
-                            print(f"Src: {src}, Dest: {dest}. FW Rule: {fw['name']}: (src_net: {fw['src_net']} dst_net: {fw['dst_net']})")
+                            # print(f"Src: {src}, Dest: {dest}. FW Rule: {fw['name']}: (src_net: {fw['src_net']} dst_net: {fw['dst_net']})")
                             return fw['name']
     except ValueError:
         return "ERROR"

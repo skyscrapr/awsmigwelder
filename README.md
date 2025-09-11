@@ -145,3 +145,7 @@ aws-mig-welder/
 ## 📄 License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+
+## Example
+python migwelder.py process-inventory -i data/inventory.csv -o "data/output" -n data/config/networks.csv -d data/config/defaults.csv -e data/config/exclusions.csv -f data/config/firewalls.csv
