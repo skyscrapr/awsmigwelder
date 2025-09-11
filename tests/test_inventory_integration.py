@@ -1,4 +1,3 @@
-import pytest
 from aws.discovery import Discovery
 
 class DummySession:

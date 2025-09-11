@@ -1,7 +1,6 @@
 """discovery"""
 
 import logging
-import os
 import csv
 import boto3
 import requests
@@ -47,7 +46,6 @@ class Discovery:
         }
 
         # --- AWS SigV4 Signing ---
-        session = botocore.session.get_session()
         # Use the session tied to the selected profile
         credentials = self.session.get_credentials().get_frozen_credentials()
         request = botocore.awsrequest.AWSRequest(

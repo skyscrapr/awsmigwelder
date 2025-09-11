@@ -1,7 +1,3 @@
-import pytest
-import sys
-import subprocess
-import shutil
 
 # def test_cli_module_help():
 #     for mod in ("migwelder"):

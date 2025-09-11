@@ -1,4 +1,3 @@
-import pytest
 import csv
 from migwelder.inventory import read_firewall_rules, check_firewall_rules
 

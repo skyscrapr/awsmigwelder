@@ -1,5 +1,3 @@
-import pytest
-from aws.discovery import Discovery
 
 # def test_set_profile():
 #     d = Discovery()

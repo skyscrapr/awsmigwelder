@@ -1,6 +1,3 @@
-import pytest
-import tempfile
-import os
 import csv
 from migwelder import inventory
 
