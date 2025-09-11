@@ -15,13 +15,13 @@ LOGGER = logging.getLogger(__name__)
 
 class Discovery:
     """Discovery"""
-        
+
     def set_profile(self, profile):
         self.session = botocore.session.Session(profile=profile)
         self._aws_region = self.session.get_config_variable("region")
         if not self._aws_region:
             raise EnvironmentError("AWS region not set in profile.")
-        
+
         # Resolve account ID once
         self._aws_account_id = ""
         try:
@@ -31,8 +31,9 @@ class Discovery:
             ident = sts.get_caller_identity()
             self._aws_account_id = ident["Account"]
         except Exception as e:
-            LOGGER.warning(f"Could not resolve AWS Account ID via STS for profile {profile}: {e}")
-
+            LOGGER.warning(
+                f"Could not resolve AWS Account ID via STS for profile {profile}: {e}"
+            )
 
     def export_mgn_server_network_data(self, server_id, output_path):
         # --- Configuration ---
@@ -87,8 +88,10 @@ class Discovery:
 
             hostname = dest_node.get("Attributes", {}).get("hostname", {}).get("S", "")
             account_id = self._aws_account_id
-            
-            print(f"⚠️ DestinationId: {destination_id} | Hostname: {hostname} | Account: {account_id}")
+
+            print(
+                f"⚠️ DestinationId: {destination_id} | Hostname: {hostname} | Account: {account_id}"
+            )
 
             if not edges:
                 print("⚠️ No connections found for the specified host")
@@ -111,9 +114,14 @@ class Discovery:
                         "ToPort": port,
                         "CidrIp": f"{source_node.get('Attributes', {}).get('ipv4Addresses', {}).get('SS', [''])[0]}/32",
                         "Description": (
-                            source_node.get("Attributes", {}).get("hostname", {}).get("S", "")
-                            if ingress else target_node.get("Attributes", {}).get("hostname", {}).get("S", "")
-                        )
+                            source_node.get("Attributes", {})
+                            .get("hostname", {})
+                            .get("S", "")
+                            if ingress
+                            else target_node.get("Attributes", {})
+                            .get("hostname", {})
+                            .get("S", "")
+                        ),
                     }
                     rules.append(rule)
 

@@ -24,7 +24,8 @@ def main():
 
     # Subcommand: export-mgn-server-network-data
     server_sg_parser = subparsers.add_parser(
-        "export-mgn-server-network-data", help="Export MGN server discovery network data"
+        "export-mgn-server-network-data",
+        help="Export MGN server discovery network data",
     )
     server_sg_parser.add_argument(
         "-i",
@@ -64,7 +65,8 @@ def main():
 
     # Subcommand: process-inventory
     sd_parser = subparsers.add_parser(
-        "process-inventory", help="Process a given inventory. Export the MGN data, enrich with known networks and apply defaults"
+        "process-inventory",
+        help="Process a given inventory. Export the MGN data, enrich with known networks and apply defaults",
     )
     sd_parser.add_argument(
         "-i", "--inventory", required=True, help="The inventory of servers."
@@ -88,15 +90,16 @@ def main():
         "-f", "--firewalls", required=True, help="firewall rules to verify"
     )
 
-
     args = parser.parse_args()
 
     discovery = Discovery()
     inventory = Inventory(discovery)
     if args.command == "process-inventory":
         inventory.load_inventory(args.inventory)
-        inventory.process(args.output, args.exclusions, args.networks, args.firewalls, args.defaults)
-    elif args.command == "export-mgn-server":    
+        inventory.process(
+            args.output, args.exclusions, args.networks, args.firewalls, args.defaults
+        )
+    elif args.command == "export-mgn-server":
         discovery.export_mgn_server_network_data(args.id, args.output)
     elif args.command == "overlay_networks":
         overlay_networks(args.input, args.rules, args.output)

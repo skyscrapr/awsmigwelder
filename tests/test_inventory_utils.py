@@ -23,32 +23,90 @@ def test_apply_exclusions_basic(tmp_path):
     assert len(out_rows) == 2
     assert all(r["CidrIp"] != "10.0.1.0/24" for r in out_rows)
 
+
 def test_deduplicate_rules():
     rules = [
-        {"Type": "ingress", "IpProtocol": "tcp", "FromPort": "80", "ToPort": "80", "CidrIp": "10.0.0.0/24", "Description": "web"},
-        {"Type": "ingress", "IpProtocol": "tcp", "FromPort": "80", "ToPort": "80", "CidrIp": "10.0.0.0/24", "Description": "web"},
-        {"Type": "egress", "IpProtocol": "udp", "FromPort": "53", "ToPort": "53", "CidrIp": "8.8.8.8/32", "Description": "dns"},
+        {
+            "Type": "ingress",
+            "IpProtocol": "tcp",
+            "FromPort": "80",
+            "ToPort": "80",
+            "CidrIp": "10.0.0.0/24",
+            "Description": "web",
+        },
+        {
+            "Type": "ingress",
+            "IpProtocol": "tcp",
+            "FromPort": "80",
+            "ToPort": "80",
+            "CidrIp": "10.0.0.0/24",
+            "Description": "web",
+        },
+        {
+            "Type": "egress",
+            "IpProtocol": "udp",
+            "FromPort": "53",
+            "ToPort": "53",
+            "CidrIp": "8.8.8.8/32",
+            "Description": "dns",
+        },
     ]
     deduped = inventory.deduplicate_rules(rules)
     assert len(deduped) == 2
     assert any(r["Type"] == "egress" for r in deduped)
 
+
 def test_consolidate_rules():
     rules = [
-        {"Type": "ingress", "IpProtocol": "tcp", "FromPort": "80", "ToPort": "80", "CidrIp": "10.0.0.0/24", "Description": "web"},
-        {"Type": "ingress", "IpProtocol": "tcp", "FromPort": "80", "ToPort": "80", "CidrIp": "10.0.0.0/24", "Description": "web"},
-        {"Type": "ingress", "IpProtocol": "tcp", "FromPort": "80", "ToPort": "80", "CidrIp": "10.0.0.0/16", "Description": "bigger"},
+        {
+            "Type": "ingress",
+            "IpProtocol": "tcp",
+            "FromPort": "80",
+            "ToPort": "80",
+            "CidrIp": "10.0.0.0/24",
+            "Description": "web",
+        },
+        {
+            "Type": "ingress",
+            "IpProtocol": "tcp",
+            "FromPort": "80",
+            "ToPort": "80",
+            "CidrIp": "10.0.0.0/24",
+            "Description": "web",
+        },
+        {
+            "Type": "ingress",
+            "IpProtocol": "tcp",
+            "FromPort": "80",
+            "ToPort": "80",
+            "CidrIp": "10.0.0.0/16",
+            "Description": "bigger",
+        },
     ]
     consolidated = inventory.consolidate_rules(rules)
     # Only the broader rule should remain
     assert any(r["CidrIp"] == "10.0.0.0/16" for r in consolidated)
     assert not any(r["CidrIp"] == "10.0.0.0/24" for r in consolidated)
 
+
 def test_is_covered():
-    broader = {"Type": "ingress", "IpProtocol": "tcp", "FromPort": "80", "ToPort": "80", "CidrIp": "10.0.0.0/16"}
-    specific = {"Type": "ingress", "IpProtocol": "tcp", "FromPort": "80", "ToPort": "80", "CidrIp": "10.0.0.0/24"}
+    broader = {
+        "Type": "ingress",
+        "IpProtocol": "tcp",
+        "FromPort": "80",
+        "ToPort": "80",
+        "CidrIp": "10.0.0.0/16",
+    }
+    specific = {
+        "Type": "ingress",
+        "IpProtocol": "tcp",
+        "FromPort": "80",
+        "ToPort": "80",
+        "CidrIp": "10.0.0.0/24",
+    }
     assert inventory.is_covered(broader, specific)
     assert not inventory.is_covered(specific, broader)
+
 
 def test_remap_cidr():
     rule = {"CidrIp": "10.0.1.0/24"}
@@ -56,6 +114,7 @@ def test_remap_cidr():
     remapped = inventory.remap_cidr(rule.copy(), known_networks)
     assert remapped["CidrIp"] == "10.0.0.0/16"
     assert remapped["Description"] == "desc"
+
 
 def test_combine_csv_files(tmp_path):
     d = tmp_path / "csvs"

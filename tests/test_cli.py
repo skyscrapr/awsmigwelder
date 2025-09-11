@@ -1,4 +1,3 @@
-
 # def test_cli_module_help():
 #     for mod in ("migwelder"):
 #         proc = subprocess.run([sys.executable, "-m", mod, "--help"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
