@@ -73,15 +73,28 @@ Consolidate security group rules from an exported CSV:
 python migwelder.py consolidate-sg-rules --input d-server-0123456789abcdef0.csv --default default-rules.csv --output d-server-0123456789abcdef0_new.csv
 ```
 
+
 ## 🧪 Running Tests
 
-Run all unit tests with:
+Run all tests (unit, integration, CLI) with:
 
 ```bash
 pytest
 ```
 
-Test files are located in the `tests/` directory.
+Test files are located in the `tests/` directory and cover:
+
+- Utility functions (e.g., exclusions, deduplication, consolidation)
+- Firewall rule reading and matching
+- Inventory process integration
+- CLI help and invocation
+- AWS Discovery class basics
+
+To run a specific test file:
+
+```bash
+pytest tests/test_inventory_utils.py
+```
 
 ## ✨ Linting and Type Checking
 
@@ -120,26 +133,32 @@ You’ll find the config in:
 .github/workflows/test.yml
 ```
 
+
 ## 📁 Project Structure
 
 ```
-aws-mig-welder/
+awsmigwelder/
 ├── aws/
 │   ├── __init__.py
-│   ├── discovery.py         # Export rules from Migration Hub
-│   └── ec2.py               # Export rules from EC2 security groups
+│   └── discovery.py         # Export rules from Migration Hub
+├── migwelder/
+│   ├── __init__.py
+│   └── inventory.py         # Inventory and rule utilities
 ├── migwelder.py             # Main CLI tool
 ├── tests/
 │   ├── __init__.py
+│   ├── conftest.py
+│   ├── test_cli.py
 │   ├── test_discovery.py
-│   ├── test_ec2.py
-|   └── test_migwelder.py
-├── setup.py
+│   ├── test_firewall_utils.py
+│   ├── test_inventory_integration.py
+│   └── test_inventory_utils.py
 ├── requirements.txt
+├── setup.py
 ├── README.md
 └── .github/
-    └── workflows/
-        └── test.yml         # GitHub Actions CI config
+  └── workflows/
+    └── test.yml         # GitHub Actions CI config
 ```
 
 ## 📄 License
@@ -147,5 +166,17 @@ aws-mig-welder/
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
 
-## Example
-python migwelder.py process-inventory -i data/inventory.csv -o "data/output" -n data/config/networks.csv -d data/config/defaults.csv -e data/config/exclusions.csv -f data/config/firewalls.csv
+
+## Example: Inventory Processing
+
+To process an inventory and generate all output CSVs:
+
+```bash
+python migwelder.py process-inventory \
+  -i data/inventory.csv \
+  -o data/output \
+  -n data/config/networks.csv \
+  -d data/config/defaults.csv \
+  -e data/config/exclusions.csv \
+  -f data/config/firewalls.csv
+```
