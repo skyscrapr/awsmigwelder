@@ -87,7 +87,7 @@ def main():
         "-e", "--exclusions", required=True, help="exclusions to apply"
     )
     sd_parser.add_argument(
-        "-f", "--firewalls", required=True, help="firewall rules to verify"
+        "-r", "--rules", required=True, help="traffic rules to overlay"
     )
 
     args = parser.parse_args()
@@ -97,7 +97,7 @@ def main():
     if args.command == "process-inventory":
         inventory.load_inventory(args.inventory)
         inventory.process(
-            args.output, args.exclusions, args.networks, args.firewalls, args.defaults
+            args.output, args.exclusions, args.networks, args.rules, args.defaults
         )
     elif args.command == "export-mgn-server":
         discovery.export_mgn_server_network_data(args.id, args.output)

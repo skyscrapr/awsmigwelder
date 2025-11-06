@@ -1,5 +1,6 @@
 import ipaddress
 import csv
+import re
 from pathlib import Path
 from typing import List, Dict, Tuple
 
@@ -18,16 +19,16 @@ class Inventory:
                 self._inventory.append(row)
 
 
-    def process(self, output_path, exclusions, networks, firewalls, defaults):
+    def process(self, output_path, exclusions, networks, rules, defaults):
         """
         Process inventory
 
         For a given inventory
         1. export MGN network data (1. Raw)
         2. apply exclusions to remove unnecessary data.
-        3. enrich data with network information and firewall check for source machines (2. Source)
-        3. enrich data with network information and firewall check for target machines (3. Target)
-        4. apply defaults and consolidate. (Processed)
+        3. enrich data with network information including source and target if known (2. Network)
+        3. enrich data with rules matches (3. Rules)
+        4. apply defaults and consolidate. (4. Consolidated)
         """
 
         out = Path(output_path)
@@ -43,30 +44,32 @@ class Inventory:
 
         for server in self._inventory:
             server_id = server["MGNServerID"]
+            hostname = server["Hostname"]
             aws_profile = server["AWSProfile"]
             self._discovery.set_profile(aws_profile)
 
-            print(f"server: {server_id}")
-            raw_file = out_raw / f"{server_id}.csv"
+            raw_file = out_raw / f"{hostname}-{server_id}.csv"
             if self._discovery.export_mgn_server_network_data(server_id, str(raw_file)):
-                source_file = out_source / f"{server_id}.csv"
-                target_file = out_target / f"{server_id}.csv"
+                source_file = out_source / f"{hostname}-{server_id}.csv"
+                target_file = out_target / f"{hostname}-{server_id}.csv"
+                consolidated_file = out_consolidated / f"{hostname}-{server_id}.csv"
 
                 sourceIPAddress = server["SourceIPAddress"]
                 targetIPAddress = server["TargetIPAddress"] if server["TargetIPAddress"] else sourceIPAddress
 
                 if sourceIPAddress:
                     apply_exclusions(raw_file, [], str(source_file)) # no exclusion for source
-                    overlay_firewalls(source_file, firewalls, str(source_file), sourceIPAddress)
-
+                    add_network_mappings(source_file, networks, sourceIPAddress)
+                    overlay_rules(source_file, rules, str(source_file), sourceIPAddress)
+ 
                 if targetIPAddress:
                     apply_exclusions(raw_file, exclusions, str(target_file))
-                    overlay_firewalls(target_file, firewalls, str(target_file), targetIPAddress)
-
-                    consolidated_file = out_consolidated / f"{server_id}.csv"
+                    add_network_mappings(target_file, networks, targetIPAddress)
+                    overlay_rules(target_file, rules, str(target_file), targetIPAddress)
+                
                     overlay_networks(target_file, networks, str(consolidated_file))
                     override_rules(consolidated_file, defaults, str(consolidated_file))
-                    overlay_firewalls(consolidated_file, firewalls, str(consolidated_file), targetIPAddress)
+                    overlay_rules(consolidated_file, rules, str(consolidated_file), targetIPAddress)
 
         combine_csv_files(out_raw, out / f"1-Raw.csv")
         combine_csv_files(out_source, out / f"2-Source.csv")
@@ -197,57 +200,114 @@ def overlay_networks(input_file, networks_file, output_file):
     write_rules_to_csv(output_file, new_rules)
     return new_rules
 
-def overlay_firewalls(input_file, firewalls_file, output_file, ip_address: str):
+def add_network_mappings(input_file, networks_file, ip_address: str):
     input_rules = read_rules_from_csv(input_file)
-    firewall_rules = read_firewall_rules(firewalls_file)
+    networks = read_rules_from_csv(networks_file)
+    vm_network = get_network(ip_address, networks)
 
     for rule in input_rules:
-        rule['FWRule'] = check_firewall_rules(ip_address, rule, firewall_rules)
-
-    write_rules_to_csv(output_file, input_rules)
-
-def read_firewall_rules(file_path):
-    firewall_rules = []
-    with open(file_path, mode='r', newline='', encoding='utf-8-sig') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            try:
-                src_net = ipaddress.ip_network(row['Source'])
-                dst_net = ipaddress.ip_network(row['Destination'])
-                firewall_rules.append({
-                    'name': row['Name'],
-                    'src_net': src_net,
-                    'dst_net': dst_net,
-                    'from_port': int(row['FromPort']) if row['FromPort'] else None,
-                    'to_port': int(row['ToPort']) if row['ToPort'] else None,
-                    'ip_protocol': row['Protocol'].upper()
-                })
-            except ValueError:
-                continue
-    return firewall_rules
-
-def check_firewall_rules(ip_address, rule, firewall_rules):
-    try:
-        if rule['Type'] == "egress":
-            src = ipaddress.ip_network(ip_address, strict=False)
-            dest = ipaddress.ip_network(rule['CidrIp'])
+        cidrIp_network = get_network(rule['CidrIp'], networks)
+        if rule['Type'] == "ingress":
+            rule['DstNet'] = vm_network
+            rule['SrcNet'] = cidrIp_network
         else:
-            src = ipaddress.ip_network(rule['CidrIp'])
-            dest = ipaddress.ip_network(ip_address, strict=False)
+            rule['SrcNet'] = vm_network
+            rule['DstNet'] = cidrIp_network
+    write_rules_to_csv(input_file, input_rules)
 
-        # print(f"Checking FW Rules for ip: {ip_address}")
-
-        for fw in firewall_rules:
-            # print(f"src_net: {fw['src_net']} dst_net: {fw['dst_net']}")
-            if (fw['src_net'].supernet_of(src) and fw['dst_net'].supernet_of(dest)):
-                if fw['ip_protocol'] == rule['IpProtocol'].upper() or fw['ip_protocol'] == 'ALL':
-                    if fw['from_port'] is None or (fw['from_port'] <= int(rule['FromPort']) <= fw['to_port']):
-                        if fw['to_port'] is None or (fw['from_port'] <= int(rule['ToPort']) <= fw['to_port']):
-                            # print(f"Src: {src}, Dest: {dest}. FW Rule: {fw['name']}: (src_net: {fw['src_net']} dst_net: {fw['dst_net']})")
-                            return fw['name']
+def get_network(cidr_ip: str, networks: List[Dict[str, str]]) -> str:
+    try:
+        ip_net = ipaddress.ip_network(cidr_ip, strict=False)
+        for net in networks:
+            net_cidr = net.get("CidrIp", "")
+            if net_cidr:
+                network = ipaddress.ip_network(net_cidr, strict=False)
+                if network.supernet_of(ip_net):
+                    return net.get("Description", "UNKNOWN_NETWORK")
     except ValueError:
+        pass
+    return "UNKNOWN_NETWORK"
+
+def overlay_rules(input_file, rules_file, output_file, ip_address: str):
+    flows = read_rules_from_csv(input_file)
+    rules = read_rules_from_csv(rules_file)
+
+    for flow in flows:
+        flow['Rule'] = get_network_rule(ip_address, flow, rules)
+
+    write_rules_to_csv(output_file, flows)
+
+def get_network_rule(ip_address, flow, rules):
+    """
+    Match rules where rule['Source'] and rule['Destination'] are regular
+    expressions. Return the first matching rule name (or a fallback) that
+    permits the flow (protocol/ports). Returns "NO_RULE_FOUND" or "ERROR".
+    """
+    try:
+        src_str = flow.get("SrcNet", "") or ""
+        dst_str = flow.get("DstNet", "") or ""
+
+        def to_int(v):
+            try:
+                return int(v)
+            except (TypeError, ValueError):
+                return None
+
+        f_from = to_int(flow.get("FromPort"))
+        f_to = to_int(flow.get("ToPort"))
+        f_proto = (flow.get("IpProtocol") or "").upper()
+
+        for rule in rules:
+            rule_name = rule.get("Name") or "UNKNOWN_RULE"
+            src_pat = (rule.get("Source") or "").strip()
+            dst_pat = (rule.get("Destination") or "").strip()
+
+            # If a pattern is present, compile and test; skip rule on invalid regex
+            try:
+                if src_pat and not re.search(src_pat, src_str):
+                    continue
+                if dst_pat and not re.search(dst_pat, dst_str):
+                    continue
+            except re.error:
+                # invalid regex -> skip this rule
+                continue
+
+            # Protocol match: rule Protocol of 'ALL' or empty means wildcard
+            r_proto = (rule.get("Protocol") or "").upper()
+            if r_proto and r_proto != "ALL" and r_proto != f_proto:
+                continue
+
+            r_from = to_int(rule.get("FromPort"))
+            r_to = to_int(rule.get("ToPort"))
+
+            # If rule has no port bounds, it allows any port
+            if r_from is None and r_to is None:
+                return rule_name
+
+            # If flow ports are not parseable, cannot compare -> skip
+            if f_from is None or f_to is None:
+                continue
+
+            # Full range comparison
+            if r_from is not None and r_to is not None:
+                if r_from <= f_from <= f_to <= r_to:
+                    return rule_name
+                else:
+                    continue
+
+            # Single-bound rules (rare) - treat as open-ended
+            if r_from is not None and r_to is None:
+                if r_from <= f_from:
+                    return rule_name
+                continue
+            if r_from is None and r_to is not None:
+                if f_to <= r_to:
+                    return rule_name
+                continue
+
+        return "NO_RULE_FOUND"
+    except Exception:
         return "ERROR"
-    return "NO FIREWALL RULE FOUND"
 
 def override_rules(input_file, rules_file, output_file):
     input_rules = read_rules_from_csv(input_file)
@@ -268,7 +328,7 @@ def override_rules(input_file, rules_file, output_file):
 
 def read_rules_from_csv(file_path: str) -> List[Dict[str, str]]:
     """Read security rules from a CSV file into a list of dictionaries."""
-    with open(file_path, mode="r", newline="") as f:
+    with open(file_path, mode="r", newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
         return list(reader)
 
@@ -309,7 +369,7 @@ def consolidate_rules(rules: List[Dict[str, str]]) -> List[Dict[str, str]]:
 
 def write_rules_to_csv(file_path: str, rules: List[Dict[str, str]]) -> None:
     """Write consolidated rules to a CSV file."""
-    fieldnames = ["AccountId", "Hostname", "Type", "IpProtocol", "FromPort", "ToPort", "CidrIp", "Description", "FWRule"]
+    fieldnames = ["AccountId", "Hostname", "Ipv4Addresses", "Type", "IpProtocol", "FromPort", "ToPort", "CidrIp", "Description", "SrcNet", "DstNet", "Rule"]
     with open(file_path, mode="w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()

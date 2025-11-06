@@ -108,19 +108,20 @@ class Discovery:
                     rule = {
                         "AccountId": account_id,
                         "Hostname": hostname,
+                        "Ipv4Addresses": dest_node.get("Attributes", {}).get("ipv4Addresses", {}).get("SS", []),
                         "Type": "ingress" if ingress else "egress",
                         "IpProtocol": edge.get("Protocol", "tcp"),
                         "FromPort": port,
                         "ToPort": port,
-                        "CidrIp": f"{source_node.get('Attributes', {}).get('ipv4Addresses', {}).get('SS', [''])[0]}/32",
-                        "Description": (
-                            source_node.get("Attributes", {})
-                            .get("hostname", {})
-                            .get("S", "")
+                        "CidrIp": (
+                            f"{source_node.get('Attributes', {}).get('ipv4Addresses', {}).get('SS', [''])[0]}/32"
                             if ingress
-                            else target_node.get("Attributes", {})
-                            .get("hostname", {})
-                            .get("S", "")
+                            else f"{target_node.get('Attributes', {}).get('ipv4Addresses', {}).get('SS', [''])[0]}/32"
+                        ),
+                        "Description": (
+                            source_node.get("Attributes", {}).get("hostname", {}).get("S", "")
+                            if ingress
+                            else target_node.get("Attributes", {}).get("hostname", {}).get("S", "")
                         ),
                     }
                     rules.append(rule)
@@ -130,6 +131,7 @@ class Discovery:
                 fieldnames = [
                     "AccountId",
                     "Hostname",
+                    "Ipv4Addresses",
                     "Type",
                     "IpProtocol",
                     "FromPort",
