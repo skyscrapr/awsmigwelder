@@ -1,8 +1,22 @@
 import ipaddress
 import csv
-import re
 from pathlib import Path
-from typing import List, Dict, Tuple
+import re
+import logging
+from dataclasses import dataclass
+from typing import Optional, Pattern, Iterable, List, Dict, Tuple
+
+logger = logging.getLogger(__name__)
+
+@dataclass
+class ProcessedRule:
+    name: str
+    src_pattern: Optional[Pattern]
+    dst_pattern: Optional[Pattern]
+    protocol: Optional[str]  # uppercase or 'ALL' or None
+    from_port: Optional[int]
+    to_port: Optional[int]
+    raw: Dict[str, str]
 
 
 class Inventory:
@@ -230,18 +244,18 @@ def get_network(cidr_ip: str, networks: List[Dict[str, str]]) -> str:
 
 def overlay_rules(input_file, rules_file, output_file, ip_address: str):
     flows = read_rules_from_csv(input_file)
-    rules = read_rules_from_csv(rules_file)
+    raw_rules = read_rules_from_csv(rules_file) if rules_file else []
+    rules = preprocess_rules(raw_rules)
 
     for flow in flows:
         flow['Rule'] = get_network_rule(ip_address, flow, rules)
 
     write_rules_to_csv(output_file, flows)
 
-def get_network_rule(ip_address, flow, rules):
+def get_network_rule(ip_address, flow: Dict[str, str], processed_rules: List[ProcessedRule]) -> str:
     """
-    Match rules where rule['Source'] and rule['Destination'] are regular
-    expressions. Return the first matching rule name (or a fallback) that
-    permits the flow (protocol/ports). Returns "NO_RULE_FOUND" or "ERROR".
+    Uses compiled regex patterns from processed_rules. Returns first matching rule.name
+    or 'NO_RULE_FOUND' / 'ERROR'.
     """
     try:
         src_str = flow.get("SrcNet", "") or ""
@@ -257,56 +271,44 @@ def get_network_rule(ip_address, flow, rules):
         f_to = to_int(flow.get("ToPort"))
         f_proto = (flow.get("IpProtocol") or "").upper()
 
-        for rule in rules:
-            rule_name = rule.get("Name") or "UNKNOWN_RULE"
-            src_pat = (rule.get("Source") or "").strip()
-            dst_pat = (rule.get("Destination") or "").strip()
-
-            # If a pattern is present, compile and test; skip rule on invalid regex
-            try:
-                if src_pat and not re.search(src_pat, src_str):
-                    continue
-                if dst_pat and not re.search(dst_pat, dst_str):
-                    continue
-            except re.error:
-                # invalid regex -> skip this rule
+        for r in processed_rules:
+            # pattern match: if pattern present, require match (use search here; change to fullmatch if desired)
+            if r.src_pattern and not r.src_pattern.search(src_str):
+                continue
+            if r.dst_pattern and not r.dst_pattern.search(dst_str):
                 continue
 
-            # Protocol match: rule Protocol of 'ALL' or empty means wildcard
-            r_proto = (rule.get("Protocol") or "").upper()
-            if r_proto and r_proto != "ALL" and r_proto != f_proto:
+            # protocol check: None or 'ALL' treated as wildcard
+            if r.protocol and r.protocol != "ALL" and r.protocol != f_proto:
                 continue
 
-            r_from = to_int(rule.get("FromPort"))
-            r_to = to_int(rule.get("ToPort"))
+            # ports: if rule has no port bounds -> matches any
+            if r.from_port is None and r.to_port is None:
+                return r.name
 
-            # If rule has no port bounds, it allows any port
-            if r_from is None and r_to is None:
-                return rule_name
-
-            # If flow ports are not parseable, cannot compare -> skip
+            # flow ports must be parseable
             if f_from is None or f_to is None:
                 continue
 
-            # Full range comparison
-            if r_from is not None and r_to is not None:
-                if r_from <= f_from <= f_to <= r_to:
-                    return rule_name
-                else:
-                    continue
-
-            # Single-bound rules (rare) - treat as open-ended
-            if r_from is not None and r_to is None:
-                if r_from <= f_from:
-                    return rule_name
+            # both bounds present
+            if r.from_port is not None and r.to_port is not None:
+                if r.from_port <= f_from <= f_to <= r.to_port:
+                    return r.name
                 continue
-            if r_from is None and r_to is not None:
-                if f_to <= r_to:
-                    return rule_name
+
+            # single bound rules (open ended)
+            if r.from_port is not None and r.to_port is None:
+                if r.from_port <= f_from:
+                    return r.name
+                continue
+            if r.from_port is None and r.to_port is not None:
+                if f_to <= r.to_port:
+                    return r.name
                 continue
 
         return "NO_RULE_FOUND"
     except Exception:
+        logger.exception("Error while matching network rule")
         return "ERROR"
 
 def override_rules(input_file, rules_file, output_file):
@@ -327,10 +329,19 @@ def override_rules(input_file, rules_file, output_file):
     return new_rules
 
 def read_rules_from_csv(file_path: str) -> List[Dict[str, str]]:
-    """Read security rules from a CSV file into a list of dictionaries."""
+    """Read CSV and normalize headers (handles BOM)."""
+    rows: List[Dict[str, str]] = []
     with open(file_path, mode="r", newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
-        return list(reader)
+        # normalize header keys
+        fieldnames = reader.fieldnames or []
+        fieldnames = [h.strip().lstrip("\ufeff") for h in fieldnames]
+        reader.fieldnames = fieldnames
+        for r in reader:
+            # normalize keys and strip values
+            normalized = {k.strip(): (v or "").strip() for k, v in r.items()}
+            rows.append(normalized)
+    return rows
 
 def deduplicate_rules(rules: List[Dict[str, str]]) -> List[Dict[str, str]]:
     seen = set()
@@ -461,3 +472,44 @@ def remap_cidr(
     except ValueError:
         pass
     return rule
+
+def preprocess_rules(raw_rules: Iterable[Dict[str, str]], *, regex_flags=0) -> List[ProcessedRule]:
+    """Compile patterns and normalize rule fields into ProcessedRule objects."""
+    processed: List[ProcessedRule] = []
+    for rr in raw_rules:
+        name = rr.get("Name") or rr.get("name") or rr.get("Description") or "<unnamed>"
+        src_raw = (rr.get("Source") or "").strip()
+        dst_raw = (rr.get("Destination") or "").strip()
+        try:
+            src_pat = re.compile(src_raw, regex_flags) if src_raw else None
+        except re.error:
+            logger.warning("Invalid Source regex for rule %s: %s", name, src_raw)
+            continue
+        try:
+            dst_pat = re.compile(dst_raw, regex_flags) if dst_raw else None
+        except re.error:
+            logger.warning("Invalid Destination regex for rule %s: %s", name, dst_raw)
+            continue
+
+        def to_int(v: Optional[str]) -> Optional[int]:
+            try:
+                return int(v) if v not in (None, "") else None
+            except (ValueError, TypeError):
+                return None
+
+        proto = (rr.get("Protocol") or rr.get("IpProtocol") or "").strip().upper() or None
+        from_p = to_int(rr.get("FromPort"))
+        to_p = to_int(rr.get("ToPort"))
+
+        processed.append(
+            ProcessedRule(
+                name=name,
+                src_pattern=src_pat,
+                dst_pattern=dst_pat,
+                protocol=proto,
+                from_port=from_p,
+                to_port=to_p,
+                raw=rr,
+            )
+        )
+    return processed
