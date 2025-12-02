@@ -26,6 +26,7 @@ class Inventory:
         self._discovery = discovery
 
     def load_inventory(self, file_path):
+        self._filename = file_path
         self._inventory = []
         with open(file_path, 'r', newline='') as f:
             reader = csv.DictReader(f)
@@ -78,6 +79,7 @@ class Inventory:
  
                 if targetIPAddress:
                     apply_exclusions(raw_file, exclusions, str(target_file))
+                    remap_ips_to_target(target_file, self._filename, target_file)
                     add_network_mappings(target_file, networks, targetIPAddress)
                     overlay_rules(target_file, rules, str(target_file), targetIPAddress)
                 
@@ -513,3 +515,153 @@ def preprocess_rules(raw_rules: Iterable[Dict[str, str]], *, regex_flags=0) -> L
             )
         )
     return processed
+
+
+# ...existing code...
+import ipaddress as ipaddr
+# ...existing code...
+
+def remap_ips_to_target(target_file: str, inventory_file: str, output_file: str) -> None:
+    """
+    Remap IP addresses in target_file using inventory_file mappings.
+    - Replace Ipv4Addresses (SourceIPAddress -> TargetIPAddress)
+    - Replace CidrIp single IPs that match SourceIPAddress with TargetIPAddress
+    """
+    import csv
+    import json
+    
+    # Load inventory and build IP mapping
+    inventory_rows = read_rules_from_csv(inventory_file)
+    ip_map = {}  # SourceIPAddress -> TargetIPAddress
+    for row in inventory_rows:
+        src = row.get("SourceIPAddress", "").strip()
+        tgt = row.get("TargetIPAddress", "").strip()
+        if src and tgt:
+            ip_map[src] = tgt
+    
+    # Read target CSV
+    target_rows = []
+    with open(target_file, mode="r", newline="", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        fieldnames = [h.strip().lstrip("\ufeff") for h in (reader.fieldnames or [])]
+        reader.fieldnames = fieldnames
+        for row in reader:
+            target_rows.append({k.strip(): (v or "").strip() for k, v in row.items()})
+    
+    # Process each row
+    for row in target_rows:
+        # Remap Ipv4Addresses: parse as list, replace source with target
+        ipv4_str = row.get("Ipv4Addresses", "").strip()
+        if ipv4_str:
+            try:
+                # Remove brackets and parse as list
+                ipv4_list = json.loads(ipv4_str.replace("'", '"'))
+                remapped = []
+                for ip in ipv4_list:
+                    remapped.append(ip_map.get(ip, ip))
+                row["Ipv4Addresses"] = str(remapped)
+            except (json.JSONDecodeError, TypeError):
+                # If not valid JSON, try simple string replacement
+                for src, tgt in ip_map.items():
+                    ipv4_str = ipv4_str.replace(src, tgt)
+                row["Ipv4Addresses"] = ipv4_str
+        
+        # Remap CidrIp: if it's a /32 or single IP that matches, replace it
+        cidr_str = row.get("CidrIp", "").strip()
+        if cidr_str:
+            # Check if it's a /32 (single IP)
+            try:
+                net = ipaddr.ip_network(cidr_str, strict=False)
+                if net.num_addresses == 1:
+                    # Single IP; check if it matches any source IP
+                    ip_str = str(net.network_address)
+                    if ip_str in ip_map:
+                        row["CidrIp"] = ip_map[ip_str] + "/32"
+            except ValueError:
+                # Not a valid CIDR; try direct match
+                if cidr_str in ip_map:
+                    row["CidrIp"] = ip_map[cidr_str]
+    
+    # Write output
+    if target_rows:
+        fieldnames = list(target_rows[0].keys())
+        with open(output_file, mode="w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(target_rows)
+        logger.info(f"Wrote remapped {len(target_rows)} rows to {output_file}")
+    else:
+        logger.warning("No rows to write")
+
+
+def remap_ips_to_target(target_file: str, inventory_file: str, output_file: str) -> None:
+    """
+    Remap IP addresses in target_file using inventory_file mappings.
+    - Replace Ipv4Addresses (SourceIPAddress -> TargetIPAddress)
+    - Replace CidrIp single IPs that match SourceIPAddress with TargetIPAddress
+    """
+    import csv
+    import json
+    
+    # Load inventory and build IP mapping
+    inventory_rows = read_rules_from_csv(inventory_file)
+    ip_map = {}  # SourceIPAddress -> TargetIPAddress
+    for row in inventory_rows:
+        src = row.get("SourceIPAddress", "").strip()
+        tgt = row.get("TargetIPAddress", "").strip()
+        if src and tgt:
+            ip_map[src] = tgt
+    
+    # Read target CSV
+    target_rows = []
+    with open(target_file, mode="r", newline="", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        fieldnames = [h.strip().lstrip("\ufeff") for h in (reader.fieldnames or [])]
+        reader.fieldnames = fieldnames
+        for row in reader:
+            target_rows.append({k.strip(): (v or "").strip() for k, v in row.items()})
+    
+    # Process each row
+    for row in target_rows:
+        # Remap Ipv4Addresses: parse as list, replace source with target
+        ipv4_str = row.get("Ipv4Addresses", "").strip()
+        if ipv4_str:
+            try:
+                # Remove brackets and parse as list
+                ipv4_list = json.loads(ipv4_str.replace("'", '"'))
+                remapped = []
+                for ip in ipv4_list:
+                    remapped.append(ip_map.get(ip, ip))
+                row["Ipv4Addresses"] = str(remapped)
+            except (json.JSONDecodeError, TypeError):
+                # If not valid JSON, try simple string replacement
+                for src, tgt in ip_map.items():
+                    ipv4_str = ipv4_str.replace(src, tgt)
+                row["Ipv4Addresses"] = ipv4_str
+        
+        # Remap CidrIp: if it's a /32 or single IP that matches, replace it
+        cidr_str = row.get("CidrIp", "").strip()
+        if cidr_str:
+            # Check if it's a /32 (single IP)
+            try:
+                net = ipaddr.ip_network(cidr_str, strict=False)
+                if net.num_addresses == 1:
+                    # Single IP; check if it matches any source IP
+                    ip_str = str(net.network_address)
+                    if ip_str in ip_map:
+                        row["CidrIp"] = ip_map[ip_str] + "/32"
+            except ValueError:
+                # Not a valid CIDR; try direct match
+                if cidr_str in ip_map:
+                    row["CidrIp"] = ip_map[cidr_str]
+    
+    # Write output
+    if target_rows:
+        fieldnames = list(target_rows[0].keys())
+        with open(output_file, mode="w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(target_rows)
+        logger.info(f"Wrote remapped {len(target_rows)} rows to {output_file}")
+    else:
+        logger.warning("No rows to write")
