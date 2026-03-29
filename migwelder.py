@@ -22,47 +22,6 @@ def main():
     parser = argparse.ArgumentParser(description="Migration Utilities")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    # Subcommand: export-mgn-server-network-data
-    server_sg_parser = subparsers.add_parser(
-        "export-mgn-server-network-data",
-        help="Export MGN server discovery network data",
-    )
-    server_sg_parser.add_argument(
-        "-i",
-        "--id",
-        required=True,
-        help="The server ID from AWS migration hub to export the security group rules for.",
-    )
-    server_sg_parser.add_argument(
-        "-o",
-        "--output",
-        required=True,
-        help="The path and filename to write the output to.",
-    )
-
-    # Subcommand: overlay_networks
-    consolidate_parser = subparsers.add_parser(
-        "overlay_networks", help="Overlay rules and consolidate CIDRs."
-    )
-    consolidate_parser.add_argument(
-        "-i", "--input", required=True, help="The rules to consolidate."
-    )
-    # consolidate_parser.add_argument(
-    #     "-d", "--default", required=False, help="The default rules to add to the set."
-    # )
-    consolidate_parser.add_argument(
-        "-r",
-        "--rules",
-        required=False,
-        help="Rules to overlay CIDRs will be replace with wider ranges if matched.",
-    )
-    consolidate_parser.add_argument(
-        "-o",
-        "--output",
-        required=True,
-        help="The filename to write the output to.",
-    )
-
     # Subcommand: process-inventory
     sd_parser = subparsers.add_parser(
         "process-inventory",
@@ -107,10 +66,6 @@ def main():
         output_path = str(Path(args.wave).parent / wave_name)
 
         inventory.process(output_path, exclusions_file, networks_file, rules_file, defaults_file)
-    elif args.command == "export-mgn-server":
-        discovery.export_mgn_server_network_data(args.id, args.output)
-    elif args.command == "overlay_networks":
-        overlay_networks(args.input, args.rules, args.output)
 
 
 if __name__ == "__main__":
