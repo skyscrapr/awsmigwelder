@@ -45,27 +45,37 @@ def main():
     discovery = Discovery()
     inventory = Inventory(discovery)
     if args.command == "process-inventory":
-        inventory.load_inventory(args.wave)
-
-        # Resolve config sources (config folder takes precedence over explicit file args)
         from pathlib import Path
 
         config_dir = Path(args.config)
         if not config_dir.is_dir():
             raise ValueError(f"--config must be an existing directory: {config_dir}")
 
-        networks_file = str(config_dir / "networks.csv")
-        defaults_file = str(config_dir / "defaults.csv")
-        exclusions_file = str(config_dir / "exclusions.csv")
-        rules_file = str(config_dir / "rules.csv")
+        networks_file = config_dir / "networks.csv"
+        defaults_file = config_dir / "defaults.csv"
+        exclusions_file = config_dir / "exclusions.csv"
+        rules_file = config_dir / "rules.csv"
 
-        
-        from pathlib import Path
+        for path in (networks_file, defaults_file, exclusions_file, rules_file):
+            if not path.is_file():
+                raise FileNotFoundError(f"Config file not found in {config_dir}: {path.name}")
 
-        wave_name = Path(args.wave).stem
-        output_path = str(Path(args.wave).parent / wave_name)
+        wave_file = Path(args.wave)
+        if not wave_file.is_file():
+            raise FileNotFoundError(f"--wave must be an existing CSV file: {wave_file}")
 
-        inventory.process(output_path, exclusions_file, networks_file, rules_file, defaults_file)
+        inventory.load_inventory(str(wave_file))
+
+        wave_name = wave_file.stem
+        output_path = str(wave_file.parent / wave_name)
+
+        inventory.process(
+            output_path,
+            str(exclusions_file),
+            str(networks_file),
+            str(rules_file),
+            str(defaults_file),
+        )
 
 
 if __name__ == "__main__":

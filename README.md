@@ -49,9 +49,7 @@ python migwelder.py <command> [options]
 
 | Command                    | Description                                       |
 |---------------------------|---------------------------------------------------|
-| `export-sg-rules`         | Export rules from a given EC2 security group     |
-| `export-server-sg-rules`  | Export rules for a server via Migration Hub      |
-| `consolidate-sg-rules`    | Consolidate duplicate or covered rules from CSV  |
+| `process-inventory`       | Process a wave inventory CSV with a config folder |
 
 ### Examples
 
@@ -169,14 +167,12 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 ## Example: Inventory Processing
 
-To process an inventory and generate all output CSVs:
+To process an inventory and generate all output CSVs (new config/wave style):
 
 ```bash
 python migwelder.py process-inventory \
-  -i data/inventory.csv \
-  -o data/output \
-  -n data/config/networks.csv \
-  -d data/config/defaults.csv \
-  -e data/config/exclusions.csv \
-  -f data/config/firewalls.csv
+  --config data/config \
+  --wave data/inventory.csv
 ```
+
+Output path will be `data/inventory/` (wave stem subfolder in the wave file parent folder).
