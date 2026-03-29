@@ -69,25 +69,16 @@ def main():
         help="Process a given inventory. Export the MGN data, enrich with known networks and apply defaults",
     )
     sd_parser.add_argument(
-        "-i", "--inventory", required=True, help="The inventory of servers."
-    )
-    sd_parser.add_argument(
-        "-o",
-        "--output",
+        "-c",
+        "--config",
         required=True,
-        help="The folder path to write the output files to.",
+        help="Path to config folder containing defaults.csv, exclusions.csv, networks.csv, rules.csv",
     )
     sd_parser.add_argument(
-        "-n", "--networks", required=True, help="known networks to overlay"
-    )
-    sd_parser.add_argument(
-        "-d", "--defaults", required=True, help="default rules to apply"
-    )
-    sd_parser.add_argument(
-        "-e", "--exclusions", required=True, help="exclusions to apply"
-    )
-    sd_parser.add_argument(
-        "-r", "--rules", required=True, help="traffic rules to overlay"
+        "-w",
+        "--wave",
+        required=True,
+        help="Path to a wave file; the wave filename (stem) is used as output subfolder name.",
     )
 
     args = parser.parse_args()
@@ -95,10 +86,27 @@ def main():
     discovery = Discovery()
     inventory = Inventory(discovery)
     if args.command == "process-inventory":
-        inventory.load_inventory(args.inventory)
-        inventory.process(
-            args.output, args.exclusions, args.networks, args.rules, args.defaults
-        )
+        inventory.load_inventory(args.wave)
+
+        # Resolve config sources (config folder takes precedence over explicit file args)
+        from pathlib import Path
+
+        config_dir = Path(args.config)
+        if not config_dir.is_dir():
+            raise ValueError(f"--config must be an existing directory: {config_dir}")
+
+        networks_file = str(config_dir / "networks.csv")
+        defaults_file = str(config_dir / "defaults.csv")
+        exclusions_file = str(config_dir / "exclusions.csv")
+        rules_file = str(config_dir / "rules.csv")
+
+        
+        from pathlib import Path
+
+        wave_name = Path(args.wave).stem
+        output_path = str(Path(args.wave).parent / wave_name)
+
+        inventory.process(output_path, exclusions_file, networks_file, rules_file, defaults_file)
     elif args.command == "export-mgn-server":
         discovery.export_mgn_server_network_data(args.id, args.output)
     elif args.command == "overlay_networks":
